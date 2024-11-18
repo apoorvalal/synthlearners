@@ -96,7 +96,7 @@ class Synth:
         self.n_jobs = n_jobs
         self.granular_weights = granular_weights
         self.reg_param = reg_param if self.method == SynthMethod.LP_NORM else None
-        self.lam_grid = lam_grid or np.logspace(-4, 2, 20)
+        self.lam_grid = np.logspace(-4, 2, 20) if lam_grid is None else lam_grid
         self.k_nn = k_nn
 
         # Internal state

@@ -39,7 +39,7 @@ def _solve_lp_norm(
         return _objective(w, Y_control.T, Y_treated)
 
     opt_args = {"p": p, "max_iterations": max_iterations, "tolerance": tolerance}
-    if reg_param is not None and reg_param > 1e-1:
+    if reg_param is not None:
         opt_args["lambda"] = np.ones(N_control) * reg_param
 
     optimizer = pe.FrankWolfe(**opt_args)
