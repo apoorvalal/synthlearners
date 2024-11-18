@@ -9,7 +9,13 @@ from joblib import Parallel, delayed
 from tqdm.auto import tqdm
 
 from .utils import tqdm_joblib
-from .solvers import _solve_lp_norm, _solve_linear, _solve_simplex, _solve_matching
+from .solvers import (
+    _solve_lp_norm,
+    _solve_linear,
+    _solve_simplex,
+    _solve_matching,
+    _choose_lambda,
+)
 
 
 ######################################################################
@@ -28,27 +34,16 @@ class SynthMethod(Enum):
 class SynthResults:
     """Container for synthetic control results."""
 
-    def __init__(
-        self,
-        unit_weights: np.ndarray,
-        treated_outcome: np.ndarray,
-        synthetic_outcome: np.ndarray,
-        pre_treatment_rmse: float,
-        post_treatment_effect: float,
-        method: "SynthMethod",
-        p: Optional[float] = None,
-        jackknife_effects: Optional[np.ndarray] = None,
-        permutation_p_value: Optional[float] = None,
-    ):
-        self.unit_weights = unit_weights
-        self.treated_outcome = treated_outcome
-        self.synthetic_outcome = synthetic_outcome
-        self.pre_treatment_rmse = pre_treatment_rmse
-        self.post_treatment_effect = post_treatment_effect
-        self.method = method
-        self.p = p
-        self.jackknife_effects = jackknife_effects
-        self.permutation_p_value = permutation_p_value
+    unit_weights: np.ndarray
+    treated_outcome: np.ndarray
+    synthetic_outcome: np.ndarray
+    pre_treatment_rmse: float
+    post_treatment_effect: float
+    method: "SynthMethod"
+    p: Optional[float] = None
+    reg_param: Optional[float] = None
+    jackknife_effects: Optional[np.ndarray] = None
+    permutation_p_value: Optional[float] = None
 
     def treatment_effect(self) -> np.ndarray:
         """Calculate treatment effect."""
@@ -70,20 +65,13 @@ class SynthResults:
         """Calculate confidence intervals using jackknife variance."""
         if self.jackknife_effects is None:
             return None
-
         effects = self.treatment_effect()
         std_err = np.sqrt(self.jackknife_variance())
         z_score = norm.ppf(1 - alpha / 2)
-
-        lower = effects - z_score * std_err
-        upper = effects + z_score * std_err
-
-        return lower, upper
+        return effects - z_score * std_err, effects + z_score * std_err
 
 
 class Synth:
-    """Base class for synthetic control estimators with support for individual unit matching."""
-
     def __init__(
         self,
         method: Union[str, SynthMethod] = "simplex",
@@ -94,19 +82,11 @@ class Synth:
         tolerance: float = 1e-8,
         n_jobs: int = 8,
         granular_weights: bool = False,
+        reg_param: Optional[float] = None,
+        lam_grid: Optional[np.ndarray] = None,
+        k_nn: int = 5,
     ):
-        """Initialize synthetic control estimator.
-
-        Args:
-            method: Estimation method ('lp_norm', 'linear', 'simplex', or 'matching')
-            p: L-p norm constraint (only used if method='lp_norm')
-            intercept: Whether to include an intercept term
-            weight_type: Type of weights to use ('unit', 'time', or 'both')
-            max_iterations: Maximum number of iterations for optimization
-            tolerance: Convergence tolerance for optimization
-            n_jobs: Number of parallel jobs for jackknife
-            granular_weights: Whether to compute unit-specific weights for each treated unit
-        """
+        """Initialize synthetic control estimator."""
         self.method = SynthMethod(method) if isinstance(method, str) else method
         self.p = p
         self.intercept = intercept
@@ -115,8 +95,23 @@ class Synth:
         self.weight_type = weight_type
         self.n_jobs = n_jobs
         self.granular_weights = granular_weights
+        self.reg_param = reg_param if self.method == SynthMethod.LP_NORM else None
+        self.lam_grid = lam_grid or np.logspace(-4, 2, 20)
+        self.k_nn = k_nn
+
+        # Internal state
         self.unit_weights = None
         self.time_weights = None
+
+    ######################################################################
+
+    #  ██    ██  ▄▄█████▄   ▄████▄    ██▄████
+    #  ██    ██  ██▄▄▄▄ ▀  ██▄▄▄▄██   ██▀
+    #  ██    ██   ▀▀▀▀██▄  ██▀▀▀▀▀▀   ██
+    #  ██▄▄▄███  █▄▄▄▄▄██  ▀██▄▄▄▄█   ██
+    #   ▀▀▀▀ ▀▀   ▀▀▀▀▀▀     ▀▀▀▀▀    ▀▀
+
+    ######################################################################
 
     def fit(
         self,
@@ -129,6 +124,7 @@ class Synth:
         **kwargs,
     ) -> SynthResults:
         """Fit synthetic control model."""
+        # Process inputs
         treated_units = (
             np.array([treated_units])
             if isinstance(treated_units, int)
@@ -137,14 +133,14 @@ class Synth:
         T_post = Y.shape[1] - T_pre if T_post is None else T_post
         self.T_pre = T_pre
 
-        # Split data into treated and control groups
+        # Split data
         control_units = np.setdiff1d(range(Y.shape[0]), treated_units)
         Y_control = Y[control_units, :]
-
-        if self.intercept:
-            Y_control2 = np.r_[Y_control, np.ones((1, Y_control.shape[1]))]
-        else:
-            Y_control2 = Y_control
+        Y_control2 = (
+            np.r_[Y_control, np.ones((1, Y_control.shape[1]))]
+            if self.intercept
+            else Y_control
+        )
 
         if self.weight_type != "unit":
             raise NotImplementedError("Only 'unit' weights are currently supported.")
@@ -152,97 +148,45 @@ class Synth:
         Y_ctrl_pre = Y_control2[:, :T_pre]
 
         if self.granular_weights:
-            # Compute weights and synthetic outcomes for each treated unit
+            # Handle individual unit matching
             individual_weights = []
             individual_synthetic = []
 
             for treated_idx in treated_units:
                 Y_treat_pre = Y[treated_idx, :T_pre]
-
-                # Get weights for this treated unit
-                if self.method == SynthMethod.LP_NORM:
-                    weights = _solve_lp_norm(
-                        Y_ctrl_pre,
-                        Y_treat_pre,
-                        self.p,
-                        self.max_iterations,
-                        self.tolerance,
-                        **kwargs,
-                    )
-                elif self.method == SynthMethod.LINEAR:
-                    weights = _solve_linear(Y_ctrl_pre, Y_treat_pre, **kwargs)
-                elif self.method == SynthMethod.MATCHING:
-                    weights = _solve_matching(
-                        Y_ctrl_pre,
-                        Y_treat_pre,
-                        **kwargs,
-                    )
-                elif self.method == SynthMethod.SIMPLEX:
-                    weights = _solve_simplex(
-                        Y_ctrl_pre,
-                        Y_treat_pre,
-                        **kwargs,
-                    )
-                else:
-                    raise NotImplementedError(
-                        f"Method {self.method} not implemented. Please select one of ['lp_norm', 'linear', 'simplex', 'matching']"
-                    )
-
+                weights = self._get_weights(Y_ctrl_pre, Y_treat_pre)
                 individual_weights.append(weights)
                 synthetic = np.dot(Y_control2.T, weights)
                 individual_synthetic.append(synthetic)
 
-            # Average the weights and synthetic outcomes
             self.unit_weights = np.mean(individual_weights, axis=0)
             synthetic_outcome = np.mean(individual_synthetic, axis=0)
-            Y_treated = Y[treated_units].mean(
-                axis=0
-            )  # Still need average treated outcome
+            Y_treated = Y[treated_units].mean(axis=0)
 
         else:
-            # Original behavior: average treated units first, then find weights
-            # Y_treated = Y[treated_units].mean(axis=0)
+            # Average treated units first
             Y_treated = Y[treated_units].reshape(-1, Y.shape[1]).mean(axis=0)
             Y_treat_pre = Y_treated[:T_pre]
 
-            if self.method == SynthMethod.LP_NORM:
-                self.unit_weights = _solve_lp_norm(
-                    Y_ctrl_pre,
-                    Y_treat_pre,
-                    self.p,
-                    self.max_iterations,
-                    self.tolerance,
-                    **kwargs,
-                )
-            elif self.method == SynthMethod.LINEAR:
-                self.unit_weights = _solve_linear(Y_ctrl_pre, Y_treat_pre, **kwargs)
-            elif self.method == SynthMethod.MATCHING:
-                self.unit_weights = _solve_matching(Y_ctrl_pre, Y_treat_pre, **kwargs)
-            elif self.method == SynthMethod.SIMPLEX:
-                self.unit_weights = _solve_simplex(Y_ctrl_pre, Y_treat_pre, **kwargs)
-            else:
-                raise NotImplementedError(
-                    f"Method {self.method} not implemented. Please select one of ['lp_norm', 'linear', 'simplex', 'matching']"
-                )
-
+            self.unit_weights = self._get_weights(Y_ctrl_pre, Y_treat_pre)
             synthetic_outcome = np.dot(Y_control2.T, self.unit_weights)
 
-        # Calculate pre-treatment fit
+        # Calculate fit and effects
         pre_rmse = np.sqrt(
             np.mean((Y_treated[:T_pre] - synthetic_outcome[:T_pre]) ** 2)
         )
 
-        # Compute jackknife effects if requested and possible
-        jackknife_effects = None
-        if compute_jackknife:
-            jackknife_effects = self._compute_jackknife_effects(Y, treated_units, T_pre)
-
-        # Calculate permutation p-value if requested
-        permutation_p_value = None
-        if compute_permutation:
-            permutation_p_value = self._compute_permutation_p_value(
-                Y, treated_units, T_pre
-            )
+        # Compute inference if requested
+        jackknife_effects = (
+            self._compute_jackknife_effects(Y, treated_units, T_pre)
+            if compute_jackknife
+            else None
+        )
+        permutation_p_value = (
+            self._compute_permutation_p_value(Y, treated_units, T_pre)
+            if compute_permutation
+            else None
+        )
 
         return SynthResults(
             unit_weights=self.unit_weights,
@@ -255,6 +199,7 @@ class Synth:
             pre_treatment_rmse=pre_rmse,
             method=self.method,
             p=self.p if self.method == SynthMethod.LP_NORM else None,
+            reg_param=self.reg_param if self.method == SynthMethod.LP_NORM else None,
             jackknife_effects=jackknife_effects,
             permutation_p_value=permutation_p_value,
         )
@@ -271,33 +216,14 @@ class Synth:
         figsize: Tuple[int, int] = (10, 6),
         ax: Optional[plt.Axes] = None,
     ) -> plt.Axes:
-        """Plot synthetic control results.
-
-        Args:
-            results: SynthResults object
-            Y: Original panel data
-            treated_units: Treated unit indices
-            T_pre: Pre-treatment period
-            mode: 'raw' for original data or 'effect' for treatment effects
-            show_ci: Whether to show confidence intervals (only for 'effect' mode)
-            alpha: Significance level for confidence intervals
-            figsize: Figure size
-            ax: Optional matplotlib Axes object
-
-        Returns:
-            matplotlib Axes object
-        """
+        """Plot synthetic control results."""
         if ax is None:
-            f, ax = plt.subplots(figsize=figsize)
+            _, ax = plt.subplots(figsize=figsize)
 
         if mode == "raw":
-            # Plot raw data
+            # Plot raw trajectories
             ctrl_units = np.setdiff1d(range(Y.shape[0]), treated_units)
-
-            # Plot control units in background
             ax.plot(Y[ctrl_units].T, color="gray", alpha=0.2, linestyle="--")
-
-            # Plot treated and synthetic trajectories
             ax.plot(results.treated_outcome, label="Treated", color="blue", linewidth=2)
             ax.plot(
                 results.synthetic_outcome,
@@ -306,18 +232,13 @@ class Synth:
                 linewidth=2,
                 linestyle="--",
             )
-
-            # Add treatment line
             ax.axvline(T_pre, color="black", linestyle="--", label="Treatment")
-
             ax.set_title("Raw Trajectories")
             ax.legend()
 
         elif mode == "effect":
-            # Compute and plot treatment effects
+            # Plot treatment effects
             effects = results.treatment_effect()
-
-            # Center x-axis at treatment time
             t = np.arange(len(effects)) - T_pre
 
             ax.plot(t, effects, color="blue", linewidth=2, label="Treatment Effect")
@@ -337,25 +258,91 @@ class Synth:
                         label=f"{int((1-alpha)*100)}% CI",
                     )
 
-            if results.permutation_p_value is not None:
-                ts = f"Treatment Effect \n ATT: {results.att():.2f} (p={results.permutation_p_value:.3f})"
-            else:
-                ts = f"Treatment Effect \n ATT: {results.att():.2f}"
-            ax.set_title(ts)
+            title = (
+                f"Treatment Effect \n ATT: {results.att():.2f}"
+                f" (p={results.permutation_p_value:.3f})"
+                if results.permutation_p_value is not None
+                else f"Treatment Effect \n ATT: {results.att():.2f}"
+            )
+
+            ax.set_title(title)
             ax.set_xlabel("Time Relative to Treatment")
             ax.set_ylabel("Effect Size")
             ax.legend()
 
         return ax
 
+    ######################################################################
+
+    #     ██                                                                 ▄▄▄▄
+    #     ▀▀                 ██                                              ▀▀██
+    #   ████     ██▄████▄  ███████    ▄████▄    ██▄████  ██▄████▄   ▄█████▄    ██
+    #     ██     ██▀   ██    ██      ██▄▄▄▄██   ██▀      ██▀   ██   ▀ ▄▄▄██    ██
+    #     ██     ██    ██    ██      ██▀▀▀▀▀▀   ██       ██    ██  ▄██▀▀▀██    ██
+    #  ▄▄▄██▄▄▄  ██    ██    ██▄▄▄   ▀██▄▄▄▄█   ██       ██    ██  ██▄▄▄███    ██▄▄▄
+    #  ▀▀▀▀▀▀▀▀  ▀▀    ▀▀     ▀▀▀▀     ▀▀▀▀▀    ▀▀       ▀▀    ▀▀   ▀▀▀▀ ▀▀     ▀▀▀▀
+
+    ######################################################################
+    def _get_weights(
+        self, Y_control: np.ndarray, Y_treated: np.ndarray, **kwargs
+    ) -> np.ndarray:
+        """Compute weights for synthetic control.
+
+        Centralizes weight computation for all methods and handles regularization.
+        """
+        if self.method == SynthMethod.LP_NORM:
+            # Handle regularization parameter if needed
+            if self.reg_param is None:
+                print(
+                    "Choosing regularization parameter using sequential cross-validation"
+                )
+                self.reg_param = _choose_lambda(
+                    Y_control=Y_control,
+                    Y_treated=Y_treated,
+                    p=self.p,
+                    lam_grid=self.lam_grid,
+                )
+
+            return _solve_lp_norm(
+                Y_control,
+                Y_treated,
+                self.p,
+                self.max_iterations,
+                self.tolerance,
+                reg_param=self.reg_param,
+            )
+
+        elif self.method == SynthMethod.LINEAR:
+            return _solve_linear(
+                Y_control,
+                Y_treated,
+                max_iterations=self.max_iterations,
+                tolerance=self.tolerance,
+            )
+
+        elif self.method == SynthMethod.MATCHING:
+            return _solve_matching(
+                Y_control,
+                Y_treated,
+                max_iterations=self.max_iterations,
+                tolerance=self.tolerance,
+                k=self.k_nn,
+            )
+
+        elif self.method == SynthMethod.SIMPLEX:
+            return _solve_simplex(
+                Y_control,
+                Y_treated,
+                max_iterations=self.max_iterations,
+                tolerance=self.tolerance,
+            )
+
     def _jackknife_single_run(
         self, Y: np.ndarray, treated_units: np.ndarray, T_pre: int, leave_out_idx: int
     ) -> np.ndarray:
         """Run single jackknife iteration leaving out one unit."""
-        # Create a copy of Y without the left-out unit
+        # Create reduced dataset
         Y_reduced = np.delete(Y, leave_out_idx, axis=0)
-
-        # Adjust treated_units indices to account for removal
         adjusted_treated = np.array(
             [
                 i if i < leave_out_idx else i - 1
@@ -364,24 +351,27 @@ class Synth:
             ]
         )
 
-        # Create new instance with same parameters
-        synth_instance = Synth(
-            method=self.method,
-            p=self.p,
-            max_iterations=self.max_iterations,
-            tolerance=self.tolerance,
+        # Split data
+        control_units = np.setdiff1d(range(Y_reduced.shape[0]), adjusted_treated)
+        Y_control = Y_reduced[control_units, :]
+        Y_control2 = (
+            np.r_[Y_control, np.ones((1, Y_control.shape[1]))]
+            if self.intercept
+            else Y_control
         )
+        Y_ctrl_pre = Y_control2[:, :T_pre]
 
-        # Fit on reduced sample
-        results = synth_instance.fit(
-            Y_reduced,
-            adjusted_treated,
-            T_pre,
-            compute_jackknife=False,
-            compute_permutation=False,
+        # Get treated outcomes
+        Y_treated = (
+            Y_reduced[adjusted_treated].reshape(-1, Y_reduced.shape[1]).mean(axis=0)
         )
+        Y_treat_pre = Y_treated[:T_pre]
 
-        return results.treatment_effect()
+        # Compute weights and synthetic outcome
+        weights = self._get_weights(Y_ctrl_pre, Y_treat_pre)
+        synthetic = np.dot(Y_control2.T, weights)
+
+        return Y_treated - synthetic
 
     def _compute_jackknife_effects(
         self,
@@ -389,55 +379,68 @@ class Synth:
         treated_units: np.ndarray,
         T_pre: int,
     ) -> Optional[np.ndarray]:
-        """Compute jackknife treatment effects in parallel.
-
-        Args:
-            Y: Panel data array
-            treated_units: Array of treated unit indices
-            T_pre: Pre-treatment period cutoff
-
-        Returns:
-            Array of jackknife treatment effects or None if n_treated <= 1
-        """
+        """Compute jackknife treatment effects in parallel."""
         if len(treated_units) <= 1:
             return None
 
         n = Y.shape[0]
-
-        # Create progress bar and run parallel computation
-        with tqdm_joblib(
-            tqdm(total=n, desc="Computing jackknife estimates")
-        ) as progress_bar:
+        with tqdm_joblib(tqdm(total=n, desc="Computing jackknife estimates")):
             effects = Parallel(n_jobs=self.n_jobs)(
                 delayed(self._jackknife_single_run)(Y, treated_units, T_pre, i)
                 for i in range(n)
             )
-
         return np.array(effects)
+
+    def _compute_placebo_effect(
+        self, Y: np.ndarray, placebo_unit: int, original_treated: np.ndarray, T_pre: int
+    ) -> float:
+        """Compute effect for a single placebo treatment."""
+        # Remove original treated units and prepare data
+        Y_reduced = np.delete(Y, original_treated, axis=0)
+        adjusted_placebo = placebo_unit - np.sum(original_treated < placebo_unit)
+
+        # Split data
+        control_units = np.setdiff1d(range(Y_reduced.shape[0]), [adjusted_placebo])
+        Y_control = Y_reduced[control_units, :]
+        Y_control2 = (
+            np.r_[Y_control, np.ones((1, Y_control.shape[1]))]
+            if self.intercept
+            else Y_control
+        )
+        Y_ctrl_pre = Y_control2[:, :T_pre]
+
+        # Get treated outcomes
+        Y_treated = Y_reduced[adjusted_placebo].reshape(-1, Y_reduced.shape[1])
+        Y_treat_pre = Y_treated[:, :T_pre].squeeze()
+
+        # Compute weights and effect
+        weights = self._get_weights(Y_ctrl_pre, Y_treat_pre)
+        synthetic = np.dot(Y_control2.T, weights)
+
+        return np.mean(Y_treated[:, T_pre:] - synthetic[T_pre:])
 
     def _compute_permutation_p_value(
         self, Y: np.ndarray, treated_units: np.ndarray, T_pre: int
     ) -> float:
         """Compute permutation test p-value."""
-        # Get the true effect for comparison
+        # Get true effect
         true_results = self.fit(
             Y, treated_units, T_pre, compute_jackknife=False, compute_permutation=False
         )
         true_effect = np.abs(true_results.post_treatment_effect)
 
+        # Warning for small sample
         n = Y.shape[0]
         if (n - 1) <= 20:
             print(
                 f"You have {n} units, so the lowest possible p-value is {1/(n-1)}, which is smaller than traditional α of 0.05 \nPermutation test may be unreliable"
             )
 
-        # Get control units
+        # Get control units and compute placebo effects
         control_units = np.setdiff1d(range(Y.shape[0]), treated_units)
-
-        # Run parallel computation with progress bar
         with tqdm_joblib(
             tqdm(total=len(control_units), desc="Computing permutation test")
-        ) as progress_bar:
+        ):
             placebo_effects = Parallel(n_jobs=self.n_jobs)(
                 delayed(self._compute_placebo_effect)(
                     Y, control_unit, treated_units, T_pre
@@ -445,42 +448,4 @@ class Synth:
                 for control_unit in control_units
             )
 
-        # Convert to absolute values for two-sided test
-        placebo_effects = np.abs(placebo_effects)
-
-        # Compute p-value as proportion of placebo effects larger than true effect
-        p_value = np.mean(placebo_effects >= true_effect)
-
-        return p_value
-
-    def _compute_placebo_effect(
-        self, Y: np.ndarray, placebo_unit: int, original_treated: np.ndarray, T_pre: int
-    ) -> float:
-        """Compute effect for a single placebo treatment."""
-        # Remove original treated units from the data
-        Y_reduced = np.delete(Y, original_treated, axis=0)
-
-        # Adjust placebo unit index to account for removed treated units
-        adjusted_placebo = placebo_unit - np.sum(original_treated < placebo_unit)
-
-        # Create new instance with same parameters
-        synth_instance = Synth(
-            method=self.method,
-            p=self.p,
-            max_iterations=self.max_iterations,
-            tolerance=self.tolerance,
-        )
-
-        # Fit synthetic control using placebo unit as treated
-        results = synth_instance.fit(
-            Y_reduced,
-            adjusted_placebo,
-            T_pre,
-            compute_jackknife=False,
-            compute_permutation=False,
-        )
-
-        return results.post_treatment_effect
-
-
-######################################################################
+        return np.mean(np.abs(placebo_effects) >= true_effect)
