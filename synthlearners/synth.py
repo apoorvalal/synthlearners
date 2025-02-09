@@ -152,8 +152,7 @@ class Synth:
             individual_synthetic = []
 
             for treated_idx in treated_units:
-                Y_treat_pre = Y[treated_idx, :T_pre]
-                weights, synthetic = self._get_synthetic(Y_treat_pre, Y_control2, T_pre)
+                weights, synthetic = self._get_synthetic(Y[treated_idx], Y_control2, T_pre)
                 individual_weights.append(weights)
                 individual_synthetic.append(synthetic)
 
@@ -164,9 +163,8 @@ class Synth:
         else:
             # Average treated units first
             Y_treated = Y[treated_units].reshape(-1, Y.shape[1]).mean(axis=0)
-            Y_treat_pre = Y_treated[:T_pre]
 
-            self.unit_weights, synthetic_outcome = self._get_synthetic(Y_treat_pre, Y_control2, T_pre)
+            self.unit_weights, synthetic_outcome = self._get_synthetic(Y_treated, Y_control2, T_pre)
 
         # Calculate fit and effects
         pre_rmse = np.sqrt(
@@ -335,12 +333,13 @@ class Synth:
             )
 
     def _get_synthetic(
-        self, Y_treat_pre: np.ndarray, Y_control2: np.ndarray, T_pre: int
+        self, Y_treated: np.ndarray, Y_control2: np.ndarray, T_pre: int
     ) -> np.ndarray:
         """Compute synthetic control outcome."""
         # TODO: Pulling out shared components for generalizaiton to eventually enable matrix completion. Continue to refactor.
 
         # Restrict to pre-treatment period for Control
+        Y_treat_pre = Y_treated[:T_pre]
         Y_ctrl_pre = Y_control2[:, :T_pre]
         
         # Get weights and multiply by control outcomes
@@ -375,10 +374,9 @@ class Synth:
         Y_treated = (
             Y_reduced[adjusted_treated].reshape(-1, Y_reduced.shape[1]).mean(axis=0)
         )
-        Y_treat_pre = Y_treated[:T_pre]
 
         # Compute weights and synthetic outcome
-        _, synthetic = self._get_synthetic(Y_treat_pre, Y_control2, T_pre)
+        _, synthetic = self._get_synthetic(Y_treated, Y_control2, T_pre)
 
         return Y_treated - synthetic
 
