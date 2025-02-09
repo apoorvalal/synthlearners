@@ -22,34 +22,32 @@ class MatrixCompletionEstimator:
     NOTE: Built in collaboration with ChatGPT o3-mini-high
 
     """
-    def __init__(self, lambda_param=1.0, tau=1.0, max_iter=500, tol=1e-4, verbose=False):
+    def __init__(self, lambda_param=1e-3, max_iter=500, tol=1e-4, verbose=False):
         """
         Parameters:
           lambda_param: regularization strength (the weight on the nuclear norm penalty)
-          tau: step size for the gradient descent update
           max_iter: maximum number of iterations
           tol: relative tolerance for convergence
           verbose: if True, print progress information
         """
         self.lambda_param = lambda_param
-        self.tau = tau
         self.max_iter = max_iter
         self.tol = tol
         self.verbose = verbose
         self.completed_matrix_ = None
 
-    def _svt(self, M, threshold):
+    def shrink_lambda(self, A, threshold):
         """
         Apply singular value thresholding (soft-thresholding of singular values).
         
         Parameters:
-          M: matrix to threshold.
+          A: matrix to threshold.
           threshold: threshold level (usually tau * lambda_param)
         
         Returns:
           The matrix after applying soft-thresholding to its singular values.
         """
-        U, s, Vt = np.linalg.svd(M, full_matrices=False)
+        U, s, Vt = np.linalg.svd(A, full_matrices=False)
         # Soft-threshold the singular values.
         s_thresholded = np.maximum(s - threshold, 0)
         return U @ np.diag(s_thresholded) @ Vt
@@ -65,26 +63,28 @@ class MatrixCompletionEstimator:
         Returns:
           self, with the completed matrix stored in self.completed_matrix_
         """
-        # Initialize the estimate X.
-        X = np.zeros_like(Y)
+        # Initialize the estimate L.
+
+        L = np.zeros_like(mask*Y)
         for it in range(self.max_iter):
-            X_old = X.copy()
-            # Compute the gradient on the observed entries.
-            grad = mask * (X - Y)
-            # Take a gradient descent step.
-            X = X - self.tau * grad
-            # Apply singular value thresholding.
-            X = self._svt(X, self.tau * self.lambda_param)
-            # Check convergence using the relative change (Frobenius norm).
-            norm_old = np.linalg.norm(X_old, 'fro') + 1e-8  # avoid div-by-zero
-            diff = np.linalg.norm(X - X_old, 'fro') / norm_old
+            L_old = L.copy()
+            shrink_A_input = mask*Y+(1-mask)*L_old
+            shrink_treshhold = self.lambda_param*np.sum(mask)/2
+            # Apply shrinkage per Equation 4.5 in the paper
+            L = self.shrink_lambda(shrink_A_input, shrink_treshhold)
+            # Check convergence using the relative change (Nuclear norm).
+            # TODO: Confirm that diff should be with 'fro'
+            norm_old = np.linalg.norm(L_old, 'fro') + 1e-8  # avoid div-by-zero
+            diff = np.linalg.norm(L - L_old, 'fro') / norm_old
             if self.verbose:
                 print(f"Iteration {it + 1:3d}, relative change = {diff:.6f}")
             if diff < self.tol:
                 if self.verbose:
                     print("Convergence achieved.")
                 break
-        self.completed_matrix_ = X
+        self.completed_matrix_ = L
         return self
 
+# TODO: Add cross-validation per secion 4 in the paper to select lambda_param
+# TODO: Add support ofr time and unit FE per paper
     
