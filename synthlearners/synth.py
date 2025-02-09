@@ -417,10 +417,9 @@ class Synth:
 
         # Get treated outcomes
         Y_treated = Y_reduced[adjusted_placebo].reshape(-1, Y_reduced.shape[1])
-        Y_treat_pre = Y_treated[:, :T_pre].squeeze()
 
         # Compute weights and effect
-        _, synthetic = self._get_synthetic(Y_treat_pre, Y_control2, T_pre)
+        _, synthetic = self._get_synthetic(Y_treated, Y_control2, T_pre)
 
         return np.mean(Y_treated[:, T_pre:] - synthetic[T_pre:])
 
