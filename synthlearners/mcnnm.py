@@ -1,5 +1,3 @@
-# src/estimator.py
-
 import numpy as np
 
 class MatrixCompletionEstimator:
@@ -89,18 +87,4 @@ class MatrixCompletionEstimator:
         self.completed_matrix_ = X
         return self
 
-    def predict(self, mask_missing):
-        """
-        Predict (impute) the missing entries.
-
-        Parameters:
-          mask_missing: binary 2D numpy array of the same shape as the outcome matrix where 1 indicates
-                        a missing (to-be-imputed) entry.
-                        
-        Returns:
-          A 2D numpy array of predicted (imputed) outcomes for the missing entries.
-        """
-        if self.completed_matrix_ is None:
-            raise ValueError("You must call fit() before predict().")
-        return mask_missing * self.completed_matrix_
     
