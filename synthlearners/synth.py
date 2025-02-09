@@ -28,6 +28,7 @@ class SynthMethod(Enum):
     LINEAR = "linear"
     SIMPLEX = "simplex"
     MATCHING = "matching"
+    MATRIX_COMPLETION = "matrix_completion"
 
 
 @dataclass
@@ -145,7 +146,6 @@ class Synth:
         if self.weight_type != "unit":
             raise NotImplementedError("Only 'unit' weights are currently supported.")
 
-        Y_ctrl_pre = Y_control2[:, :T_pre]
 
         if self.granular_weights:
             # Handle individual unit matching
@@ -154,9 +154,8 @@ class Synth:
 
             for treated_idx in treated_units:
                 Y_treat_pre = Y[treated_idx, :T_pre]
-                weights = self._get_weights(Y_ctrl_pre, Y_treat_pre)
+                weights, synthetic = self._get_synthetic(Y_treat_pre, Y_control2, T_pre)
                 individual_weights.append(weights)
-                synthetic = np.dot(Y_control2.T, weights)
                 individual_synthetic.append(synthetic)
 
             self.unit_weights = np.mean(individual_weights, axis=0)
@@ -168,8 +167,7 @@ class Synth:
             Y_treated = Y[treated_units].reshape(-1, Y.shape[1]).mean(axis=0)
             Y_treat_pre = Y_treated[:T_pre]
 
-            self.unit_weights = self._get_weights(Y_ctrl_pre, Y_treat_pre)
-            synthetic_outcome = np.dot(Y_control2.T, self.unit_weights)
+            self.unit_weights, synthetic_outcome = self._get_synthetic(Y_treat_pre, Y_control2, T_pre)
 
         # Calculate fit and effects
         pre_rmse = np.sqrt(
@@ -337,6 +335,20 @@ class Synth:
                 tolerance=self.tolerance,
             )
 
+    def _get_synthetic(
+        self, Y_treat_pre: np.ndarray, Y_control2: np.ndarray, T_pre: int
+    ) -> np.ndarray:
+        """Compute synthetic control outcome."""
+        # TODO: Pulling out shared components for generalizaiton to eventually enable matrix completion. Continue to refactor.
+
+        # Restrict to pre-treatment period for Control
+        Y_ctrl_pre = Y_control2[:, :T_pre]
+        
+        # Get weights and multiply by control outcomes
+        weights = self._get_weights(Y_ctrl_pre, Y_treat_pre)
+        synthetic = np.dot(Y_control2.T, weights)
+        return weights, synthetic
+      
     def _jackknife_single_run(
         self, Y: np.ndarray, treated_units: np.ndarray, T_pre: int, leave_out_idx: int
     ) -> np.ndarray:
@@ -359,7 +371,6 @@ class Synth:
             if self.intercept
             else Y_control
         )
-        Y_ctrl_pre = Y_control2[:, :T_pre]
 
         # Get treated outcomes
         Y_treated = (
@@ -368,8 +379,7 @@ class Synth:
         Y_treat_pre = Y_treated[:T_pre]
 
         # Compute weights and synthetic outcome
-        weights = self._get_weights(Y_ctrl_pre, Y_treat_pre)
-        synthetic = np.dot(Y_control2.T, weights)
+        _, synthetic = self._get_synthetic(Y_treat_pre, Y_control2, T_pre)
 
         return Y_treated - synthetic
 
@@ -407,15 +417,13 @@ class Synth:
             if self.intercept
             else Y_control
         )
-        Y_ctrl_pre = Y_control2[:, :T_pre]
 
         # Get treated outcomes
         Y_treated = Y_reduced[adjusted_placebo].reshape(-1, Y_reduced.shape[1])
         Y_treat_pre = Y_treated[:, :T_pre].squeeze()
 
         # Compute weights and effect
-        weights = self._get_weights(Y_ctrl_pre, Y_treat_pre)
-        synthetic = np.dot(Y_control2.T, weights)
+        _, synthetic = self._get_synthetic(Y_treat_pre, Y_control2, T_pre)
 
         return np.mean(Y_treated[:, T_pre:] - synthetic[T_pre:])
 
