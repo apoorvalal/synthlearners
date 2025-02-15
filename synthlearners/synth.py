@@ -136,11 +136,6 @@ class Synth:
         # Split data
         control_units = np.setdiff1d(range(Y.shape[0]), treated_units)
         Y_control = Y[control_units, :]
-        Y_control2 = (
-            np.r_[Y_control, np.ones((1, Y_control.shape[1]))]
-            if self.intercept
-            else Y_control
-        )
 
         if self.weight_type != "unit":
             raise NotImplementedError("Only 'unit' weights are currently supported.")
@@ -152,7 +147,7 @@ class Synth:
             individual_synthetic = []
 
             for treated_idx in treated_units:
-                weights, synthetic = self._get_synthetic(Y[treated_idx], Y_control2, T_pre)
+                weights, synthetic = self._get_synthetic(Y[treated_idx], Y_control, T_pre)
                 individual_weights.append(weights)
                 individual_synthetic.append(synthetic)
 
@@ -164,7 +159,7 @@ class Synth:
             # Average treated units first
             Y_treated = Y[treated_units].reshape(-1, Y.shape[1]).mean(axis=0)
 
-            self.unit_weights, synthetic_outcome = self._get_synthetic(Y_treated, Y_control2, T_pre)
+            self.unit_weights, synthetic_outcome = self._get_synthetic(Y_treated, Y_control, T_pre)
 
         # Calculate fit and effects
         pre_rmse = np.sqrt(
@@ -333,10 +328,17 @@ class Synth:
             )
 
     def _get_synthetic(
-        self, Y_treated: np.ndarray, Y_control2: np.ndarray, T_pre: int
+        self, Y_treated: np.ndarray, Y_control: np.ndarray, T_pre: int
     ) -> np.ndarray:
         """Compute synthetic control outcome."""
         # TODO: Pulling out shared components for generalizaiton to eventually enable matrix completion. Continue to refactor.
+
+        # Add intercept if needed
+        Y_control2 = (
+            np.r_[Y_control, np.ones((1, Y_control.shape[1]))]
+            if self.intercept
+            else Y_control
+        )
 
         # Restrict to pre-treatment period for Control
         Y_treat_pre = Y_treated[:T_pre]
@@ -364,11 +366,6 @@ class Synth:
         # Split data
         control_units = np.setdiff1d(range(Y_reduced.shape[0]), adjusted_treated)
         Y_control = Y_reduced[control_units, :]
-        Y_control2 = (
-            np.r_[Y_control, np.ones((1, Y_control.shape[1]))]
-            if self.intercept
-            else Y_control
-        )
 
         # Get treated outcomes
         Y_treated = (
@@ -376,7 +373,7 @@ class Synth:
         )
 
         # Compute weights and synthetic outcome
-        _, synthetic = self._get_synthetic(Y_treated, Y_control2, T_pre)
+        _, synthetic = self._get_synthetic(Y_treated, Y_control, T_pre)
 
         return Y_treated - synthetic
 
@@ -404,22 +401,18 @@ class Synth:
         """Compute effect for a single placebo treatment."""
         # Remove original treated units and prepare data
         Y_reduced = np.delete(Y, original_treated, axis=0)
+        # Adjust placebo unit index
         adjusted_placebo = placebo_unit - np.sum(original_treated < placebo_unit)
 
         # Split data
         control_units = np.setdiff1d(range(Y_reduced.shape[0]), [adjusted_placebo])
         Y_control = Y_reduced[control_units, :]
-        Y_control2 = (
-            np.r_[Y_control, np.ones((1, Y_control.shape[1]))]
-            if self.intercept
-            else Y_control
-        )
 
         # Get treated outcomes
         Y_treated = Y_reduced[adjusted_placebo].reshape(-1, Y_reduced.shape[1])
 
         # Compute weights and effect
-        _, synthetic = self._get_synthetic(Y_treated, Y_control2, T_pre)
+        _, synthetic = self._get_synthetic(Y_treated.squeeze(), Y_control, T_pre)
 
         return np.mean(Y_treated[:, T_pre:] - synthetic[T_pre:])
 
