@@ -50,6 +50,9 @@ class MatrixCompletionEstimator:
         U, s, Vt = np.linalg.svd(A, full_matrices=False)
         # Soft-threshold the singular values.
         s_thresholded = np.maximum(s - threshold, 0)
+        if self.verbose:
+            print(f"singular values: {s}")
+            print(f"s_thresholded: {s_thresholded}")
         return U @ np.diag(s_thresholded) @ Vt
 
     def fit(self, Y, mask):
@@ -66,14 +69,15 @@ class MatrixCompletionEstimator:
         # Initialize the estimate L.
 
         L = np.zeros_like(mask*Y)
+        shrink_treshhold = self.lambda_param*np.sum(mask)/2
+        if self.verbose:
+            print(f"shrink_treshhold: {shrink_treshhold}")
         for it in range(self.max_iter):
             L_old = L.copy()
             shrink_A_input = mask*Y+(1-mask)*L_old
-            shrink_treshhold = self.lambda_param*np.sum(mask)/2
             # Apply shrinkage per Equation 4.5 in the paper
             L = self.shrink_lambda(shrink_A_input, shrink_treshhold)
             # Check convergence using the relative change (Nuclear norm).
-            # TODO: Confirm that diff should be with 'fro'
             norm_old = np.linalg.norm(L_old, 'fro') + 1e-8  # avoid div-by-zero
             diff = np.linalg.norm(L - L_old, 'fro') / norm_old
             if self.verbose:

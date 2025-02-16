@@ -5,10 +5,11 @@ from enum import Enum
 import numpy as np
 from scipy.stats import norm
 import matplotlib.pyplot as plt
+import logging
 from joblib import Parallel, delayed
 from tqdm.auto import tqdm
 
-from .utils import tqdm_joblib
+from .utils import tqdm_joblib, convert_to_W
 from .solvers import (
     _solve_lp_norm,
     _solve_linear,
@@ -16,6 +17,7 @@ from .solvers import (
     _solve_matching,
     _choose_lambda,
 )
+from .mcnnm import MatrixCompletionEstimator
 
 ######################################################################
 
@@ -121,6 +123,7 @@ class Synth:
         T_post: Optional[int] = None,
         compute_jackknife: bool = False,
         compute_permutation: bool = False,
+        verbose: bool = False,
         **kwargs,
     ) -> SynthResults:
         """Fit synthetic control model."""
@@ -147,7 +150,7 @@ class Synth:
             individual_synthetic = []
 
             for treated_idx in treated_units:
-                weights, synthetic = self._get_synthetic(Y[treated_idx], Y_control, T_pre)
+                weights, synthetic = self._get_synthetic(Y[treated_idx], Y_control, T_pre, verbose)
                 individual_weights.append(weights)
                 individual_synthetic.append(synthetic)
 
@@ -159,7 +162,7 @@ class Synth:
             # Average treated units first
             Y_treated = Y[treated_units].reshape(-1, Y.shape[1]).mean(axis=0)
 
-            self.unit_weights, synthetic_outcome = self._get_synthetic(Y_treated, Y_control, T_pre)
+            self.unit_weights, synthetic_outcome = self._get_synthetic(Y_treated, Y_control, T_pre, verbose)
 
         # Calculate fit and effects
         pre_rmse = np.sqrt(
@@ -328,25 +331,36 @@ class Synth:
             )
 
     def _get_synthetic(
-        self, Y_treated: np.ndarray, Y_control: np.ndarray, T_pre: int
+        self, Y_treated: np.ndarray, Y_control: np.ndarray, T_pre: int, verbose: bool = False
     ) -> np.ndarray:
         """Compute synthetic control outcome."""
         # TODO: Pulling out shared components for generalizaiton to eventually enable matrix completion. Continue to refactor.
 
-        # Add intercept if needed
-        Y_control2 = (
-            np.r_[Y_control, np.ones((1, Y_control.shape[1]))]
-            if self.intercept
-            else Y_control
-        )
+        if self.method == SynthMethod.MATRIX_COMPLETION:
+            # Convert to treatment matrix
+            Y, W,N_treated = convert_to_W(Y_treated, Y_control, T_pre)
+            print("Y control std:",np.std(Y_control))
+            # Fit matrix completion model
+            mcnnm = MatrixCompletionEstimator(lambda_param=1e+1, max_iter=500, tol=1e-8,verbose=verbose)
+            mcnnm.fit(Y, 1.-W)
+            weights = None
+            synthetic = mcnnm.completed_matrix_[:N_treated].squeeze()
+        else:
+            # Add intercept if needed
+            Y_control2 = (
+                np.r_[Y_control, np.ones((1, Y_control.shape[1]))]
+                if self.intercept
+                else Y_control
+            )
 
-        # Restrict to pre-treatment period for Control
-        Y_treat_pre = Y_treated[:T_pre]
-        Y_ctrl_pre = Y_control2[:, :T_pre]
+            # Restrict to pre-treatment period for Control
+            Y_treat_pre = Y_treated[:T_pre]
+            Y_ctrl_pre = Y_control2[:, :T_pre]
         
-        # Get weights and multiply by control outcomes
-        weights = self._get_weights(Y_ctrl_pre, Y_treat_pre)
-        synthetic = np.dot(Y_control2.T, weights)
+            # Get weights and multiply by control outcomes
+            weights = self._get_weights(Y_ctrl_pre, Y_treat_pre)
+            synthetic = np.dot(Y_control2.T, weights)
+
         return weights, synthetic
       
     def _jackknife_single_run(
