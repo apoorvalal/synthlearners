@@ -106,7 +106,18 @@ class SynthPlotter:
         # Plot synthetic controls
         for result in results:
             method = result.method.value
-            label = method if method != "lp_norm" else f"lp constrained (p={result.p})"
+            if method == "matrix_completion":
+                label = "matrix_completion"
+                if result.unit_intercept and result.time_intercept:
+                    label += " w/Unit and Time FEs"
+                if result.unit_intercept and not result.time_intercept:
+                    label += " w/Unit FEs"
+                if not result.unit_intercept and result.time_intercept:
+                    label += " w/Time FEs"
+            else:
+                label = (
+                    method if method != "lp_norm" else f"lp constrained (p={result.p})"
+                )
 
             ax.plot(
                 result.synthetic_outcome,
@@ -159,9 +170,18 @@ class SynthPlotter:
             # Plot weights comparison
             for result in results:
                 method = result.method.value
-                label = (
-                    method if method != "lp_norm" else f"lp constrained (p={result.p})"
-                )
+                if method == "matrix_completion":
+                    label = "matrix_completion"
+                    if result.unit_intercept and result.time_intercept:
+                        label += " w/Unit and Time FEs"
+                    if result.unit_intercept and not result.time_intercept:
+                        label += " w/Unit FEs"
+                    if not result.unit_intercept and result.time_intercept:
+                        label += " w/Time FEs"
+                else:
+                    label = (
+                        method if method != "lp_norm" else f"lp constrained (p={result.p})"
+                    )
                 ax.plot(
                     result.unit_weights,
                     label=label,
@@ -178,9 +198,18 @@ class SynthPlotter:
             # Plot weight distributions
             for result in results:
                 method = result.method.value
-                label = (
-                    method if method != "lp_norm" else f"lp constrained (p={result.p})"
-                )
+                if method == "matrix_completion":
+                    label = "matrix_completion"
+                    if result.unit_intercept and result.time_intercept:
+                        label += " w/Unit and Time FEs"
+                    if result.unit_intercept and not result.time_intercept:
+                        label += " w/Unit FEs"
+                    if not result.unit_intercept and result.time_intercept:
+                        label += " w/Time FEs"
+                else:
+                    label = (
+                        method if method != "lp_norm" else f"lp constrained (p={result.p})"
+                    )
                 ax.hist(
                     result.unit_weights,
                     alpha=0.6,

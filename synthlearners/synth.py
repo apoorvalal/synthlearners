@@ -42,6 +42,8 @@ class SynthResults:
     pre_treatment_rmse: float
     post_treatment_effect: float
     method: "SynthMethod"
+    unit_intercept: bool
+    time_intercept: bool
     p: Optional[float] = None
     reg_param: Optional[float] = None
     jackknife_effects: Optional[np.ndarray] = None
@@ -78,7 +80,7 @@ class Synth:
         self,
         method: Union[str, SynthMethod] = "simplex",
         p: float = 1.0,
-        intercept: bool = False,
+        intercept: bool = False, # TODO: Combine with general unit and time inercepts for MC
         weight_type: str = "unit",
         max_iterations: int = 10000,
         tolerance: float = 1e-8,
@@ -87,6 +89,8 @@ class Synth:
         reg_param: Optional[float] = None,
         lam_grid: Optional[np.ndarray] = None,
         k_nn: int = 5,
+        unit_intercept: bool = False,
+        time_intercept: bool = False
     ):
         """Initialize synthetic control estimator."""
         self.method = SynthMethod(method) if isinstance(method, str) else method
@@ -100,6 +104,8 @@ class Synth:
         self.reg_param = reg_param if self.method == SynthMethod.LP_NORM else None
         self.lam_grid = np.logspace(-4, 2, 20) if lam_grid is None else lam_grid
         self.k_nn = k_nn
+        self.unit_intercept = unit_intercept
+        self.time_intercept = time_intercept
 
         # Internal state
         self.unit_weights = None
@@ -191,6 +197,8 @@ class Synth:
             ),
             pre_treatment_rmse=pre_rmse,
             method=self.method,
+            unit_intercept=self.unit_intercept,
+            time_intercept=self.time_intercept,
             p=self.p if self.method == SynthMethod.LP_NORM else None,
             reg_param=self.reg_param if self.method == SynthMethod.LP_NORM else None,
             jackknife_effects=jackknife_effects,
@@ -339,10 +347,13 @@ class Synth:
         if self.method == SynthMethod.MATRIX_COMPLETION:
             # Convert to treatment matrix
             Y, W,N_treated = convert_to_W(Y_treated, Y_control, T_pre)
-            print("Y control std:",np.std(Y_control))
             # Fit matrix completion model
             mcnnm = MatrixCompletionEstimator(lambda_param=1e+1, max_iter=500, tol=1e-8,verbose=verbose)
-            mcnnm.fit(Y, 1.-W)
+            if self.unit_intercept or self.time_intercept:
+                mcnnm.NNM_fit(Y, 1.-W,
+                              to_estimate_u=self.unit_intercept,to_estimate_v=self.time_intercept)
+            else:
+                mcnnm.fit(Y, 1.-W)
             weights = None
             synthetic = mcnnm.completed_matrix_[:N_treated].squeeze()
         else:
