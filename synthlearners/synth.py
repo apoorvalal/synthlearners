@@ -95,7 +95,6 @@ class Synth:
         """Initialize synthetic control estimator."""
         self.method = SynthMethod(method) if isinstance(method, str) else method
         self.p = p
-        self.intercept = intercept
         self.max_iterations = max_iterations
         self.tolerance = tolerance
         self.weight_type = weight_type
@@ -348,19 +347,16 @@ class Synth:
             # Convert to treatment matrix
             Y, W,N_treated = convert_to_W(Y_treated, Y_control, T_pre)
             # Fit matrix completion model
-            mcnnm = MatrixCompletionEstimator(lambda_param=1e+1, max_iter=500, tol=1e-8,verbose=verbose)
-            if self.unit_intercept or self.time_intercept:
-                mcnnm.NNM_fit(Y, 1.-W,
-                              to_estimate_u=self.unit_intercept,to_estimate_v=self.time_intercept)
-            else:
-                mcnnm.fit(Y, 1.-W)
+            lambda_param = self.reg_param if self.reg_param is not None else 1e+1
+            mcnnm = MatrixCompletionEstimator(lambda_param=lambda_param, max_iter=self.max_iterations, tol=1e-8,verbose=verbose)
+            mcnnm.fit(Y, 1.-W,self.unit_intercept,self.time_intercept)
             weights = None
             synthetic = mcnnm.completed_matrix_[:N_treated].squeeze()
         else:
-            # Add intercept if needed
+            # Add time intercept if needed
             Y_control2 = (
                 np.r_[Y_control, np.ones((1, Y_control.shape[1]))]
-                if self.intercept
+                if self.time_intercept
                 else Y_control
             )
 

@@ -50,9 +50,6 @@ class MatrixCompletionEstimator:
         U, s, Vt = np.linalg.svd(A, full_matrices=False)
         # Soft-threshold the singular values.
         s_thresholded = np.maximum(s - threshold, 0)
-        if self.verbose:
-            print(f"singular values: {s[1:5]}")
-            print(f"s_thresholded: {s_thresholded[1:5]}")
         return U @ np.diag(s_thresholded) @ Vt, s_thresholded
 
     def compute_matrix(self, L, u, v):
@@ -190,7 +187,7 @@ class MatrixCompletionEstimator:
         
         return {"u": u, "v": v, "lambda_L_max": lambda_L_max}
 
-    def update_L(self, M, mask, L, u, v, lambda_L):
+    def update_L(self, M, mask, L, u, v, lambda_s):
         """
         Updates L in the coordinate descent algorithm using Singular Value Thresholding (SVT).
         Saves singular values for computing the objective value efficiently.
@@ -201,14 +198,12 @@ class MatrixCompletionEstimator:
         L (numpy.ndarray): Current matrix L
         u (numpy.ndarray): Vector u
         v (numpy.ndarray): Vector v
-        lambda_L (float): Regularization parameter
+        lambda (float): Regularization parameter
         
         Returns:
         dict: Updated matrix L and singular values
         """
-        shrink_treshhold = lambda_L*np.sum(mask)/2 # For now keep consistent with other method
         M, mask, L, u, v = map(np.asarray, (M, mask, L, u, v))
-        train_size = np.sum(mask)  # Count non-zero elements in mask
         
         H = self.compute_matrix(L, u, v)  # Compute H matrix
         P_omega = (M - H) * mask  # Compute masked projection matrix
@@ -216,11 +211,11 @@ class MatrixCompletionEstimator:
         #Note: Different from no FE case [M*mask+(1-mask)*L] 
         # Assume u and v are 0 [(M-L)*mask + L] = M*mask + (1-mask)*L, so equivalent
         
-        L_upd, sing = self.shrink_lambda(proj, shrink_treshhold)
+        L_upd, sing = self.shrink_lambda(proj, lambda_s)
         return {"L": L_upd, "Sigma": sing}
 
     # Full NNM fit with fixed effects in individual and time.    
-    def NNM_fit(self, M, mask,to_estimate_u=True, to_estimate_v=True):
+    def NNM_fit(self, M, mask,lambda_L,to_estimate_u=True, to_estimate_v=True):
         """
         Performs coordinate descent updates for matrix decomposition. Added complexity over self.fit() is due to the
         addtion of the unit and time fixed effects.
@@ -228,16 +223,18 @@ class MatrixCompletionEstimator:
         Parameters:
         M (numpy.ndarray): Input matrix M
         mask (numpy.ndarray): Mask matrix
+        lambda_L (float): Regularization parameter
         to_estimate_u (bool): Whether to estimate u
         to_estimate_v (bool): Whether to estimate v
         
         Returns:
         dict: Updated matrices L, u, and v
         """
-        lambda_L = self.lambda_param # To mirror current approach. Will move to coming from CV optimization
+        shrink_treshhold = lambda_L*np.sum(mask)/2 # For now keep consistent with other method
         L_init = np.zeros_like(M) 
         init_uv = self.initialize_uv(M, mask, to_estimate_u, to_estimate_v)
-        # lambda_L_max = initialize_uv_res["lambda_L_max"]
+        lambda_L_max = init_uv["lambda_L_max"]
+        shrink_treshhold_max = lambda_L_max*np.sum(mask)/2 # For now keep consistent with other method
         u_init = init_uv["u"]
         v_init = init_uv["v"]
         
@@ -247,6 +244,11 @@ class MatrixCompletionEstimator:
         sum_sigma = np.sum(sing)
         obj_val = self.compute_objval(M, mask, L, u, v, sum_sigma, lambda_L)
         term_iter = 0
+
+        if self.verbose:
+            print(f"shrink_treshhold: {shrink_treshhold}")
+            print(f"lambda_L_max: {lambda_L_max}")
+            print(f"shrink_treshhold_max: {shrink_treshhold_max}")
         
         for iter in range(self.max_iter):
             # Update u
@@ -256,7 +258,7 @@ class MatrixCompletionEstimator:
             v = self.update_v(M, mask, L, u) if to_estimate_v else np.zeros(M.shape[1])
             
             # Update L
-            upd_L = self.update_L(M, mask, L, u, v, lambda_L)
+            upd_L = self.update_L(M, mask, L, u, v, shrink_treshhold)
             L = upd_L["L"]
             sing = upd_L["Sigma"]
             sum_sigma = np.sum(sing)
@@ -273,6 +275,7 @@ class MatrixCompletionEstimator:
         
         if self.verbose:
             print(f"Terminated at iteration: {term_iter}, for lambda_L: {lambda_L}, with obj_val: {new_obj_val}")
+            print(f"Final Singular Values ({sing.shape}): {sing}")
             print(f"unit FE ({u.shape}): {u}")
             print(f"time FE ({v.shape}): {v}")
         
@@ -281,8 +284,8 @@ class MatrixCompletionEstimator:
         self.singular_values = sing
         return self
 
-    # Simple SVT no FE
-    def fit(self, M, mask):
+    # Simple SVT no FE (self contained for explainability)
+    def simple_fit(self, M, mask, lambda_L):
         """
         Fit the matrix completion model.
 
@@ -296,7 +299,7 @@ class MatrixCompletionEstimator:
         # Initialize the estimate L.
 
         L = np.zeros_like(mask*M)
-        shrink_treshhold = self.lambda_param*np.sum(mask)/2
+        shrink_treshhold = lambda_L*np.sum(mask)/2
         if self.verbose:
             print(f"shrink_treshhold: {shrink_treshhold}")
         for it in range(self.max_iter):
@@ -316,7 +319,26 @@ class MatrixCompletionEstimator:
         self.completed_matrix_ = L
         self.singular_values = s_thresholded
         return self
-
-# TODO: Add cross-validation per secion 4 in the paper to select lambda_param
-# TODO: Add support ofr time and unit FE per paper
     
+    def fit(self, M, mask, unit_intercept=False, time_intercept=False):
+        """
+        Fit the matrix completion model.
+
+        Parameters:
+          M: 2D numpy array of observed outcomes. For missing entries, you may set Y to 0 (or any placeholder)
+          mask: binary 2D numpy array of the same shape as Y where 1 indicates an observed entry and 0 a missing one.
+          unit_intercept: boolean, if True, include unit fixed effects
+          time_intercept: boolean, if True, include time fixed effects
+
+        Returns:
+          self, with the completed matrix stored in self.completed_matrix_
+        """
+        lambda_L = self.lambda_param # To mirror current approach. Will move to coming from CV optimization
+
+        if unit_intercept or time_intercept:
+            return self.NNM_fit(M, mask, lambda_L, to_estimate_u=unit_intercept,to_estimate_v=time_intercept)
+        else:
+            return self.simple_fit(M, mask, lambda_L)
+
+
+# TODO: Add cross-validation per secion 4 in the paper to select lambda_param    
