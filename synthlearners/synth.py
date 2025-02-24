@@ -80,7 +80,6 @@ class Synth:
         self,
         method: Union[str, SynthMethod] = "simplex",
         p: float = 1.0,
-        intercept: bool = False, # TODO: Combine with general unit and time inercepts for MC
         weight_type: str = "unit",
         max_iterations: int = 10000,
         tolerance: float = 1e-8,
