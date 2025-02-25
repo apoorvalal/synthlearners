@@ -5,7 +5,6 @@ import contextlib
 import joblib
 
 
-
 def prepare_panel(
     df: pd.DataFrame,
     unit_col: str,
@@ -116,7 +115,10 @@ def _prepare_panel_data(
 
     return Y, W, treated_units, T_pre
 
-def convert_to_W(Y_treated: np.ndarray, Y_control: np.ndarray, T_pre: int) -> np.ndarray:
+
+def convert_to_W(
+    Y_treated: np.ndarray, Y_control: np.ndarray, T_pre: int
+) -> np.ndarray:
     """Convert observed outcomes to treatment matrix W.
 
     Args:
@@ -144,6 +146,7 @@ def convert_to_W(Y_treated: np.ndarray, Y_control: np.ndarray, T_pre: int) -> np
     Y = np.vstack([Y_treated, Y_control])
 
     return Y, W, N_treated
+
 
 @contextlib.contextmanager
 def tqdm_joblib(tqdm_object):

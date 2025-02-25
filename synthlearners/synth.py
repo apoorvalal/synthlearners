@@ -89,7 +89,7 @@ class Synth:
         lam_grid: Optional[np.ndarray] = None,
         k_nn: int = 5,
         unit_intercept: bool = False,
-        time_intercept: bool = False
+        time_intercept: bool = False,
     ):
         """Initialize synthetic control estimator."""
         self.method = SynthMethod(method) if isinstance(method, str) else method
@@ -147,14 +147,15 @@ class Synth:
         if self.weight_type != "unit":
             raise NotImplementedError("Only 'unit' weights are currently supported.")
 
-
         if self.granular_weights:
             # Handle individual unit matching
             individual_weights = []
             individual_synthetic = []
 
             for treated_idx in treated_units:
-                weights, synthetic = self._get_synthetic(Y[treated_idx], Y_control, T_pre, verbose)
+                weights, synthetic = self._get_synthetic(
+                    Y[treated_idx], Y_control, T_pre, verbose
+                )
                 individual_weights.append(weights)
                 individual_synthetic.append(synthetic)
 
@@ -166,7 +167,9 @@ class Synth:
             # Average treated units first
             Y_treated = Y[treated_units].reshape(-1, Y.shape[1]).mean(axis=0)
 
-            self.unit_weights, synthetic_outcome = self._get_synthetic(Y_treated, Y_control, T_pre, verbose)
+            self.unit_weights, synthetic_outcome = self._get_synthetic(
+                Y_treated, Y_control, T_pre, verbose
+            )
 
         # Calculate fit and effects
         pre_rmse = np.sqrt(
@@ -337,18 +340,27 @@ class Synth:
             )
 
     def _get_synthetic(
-        self, Y_treated: np.ndarray, Y_control: np.ndarray, T_pre: int, verbose: bool = False
+        self,
+        Y_treated: np.ndarray,
+        Y_control: np.ndarray,
+        T_pre: int,
+        verbose: bool = False,
     ) -> np.ndarray:
         """Compute synthetic control outcome."""
         # TODO: Pulling out shared components for generalizaiton to eventually enable matrix completion. Continue to refactor.
 
         if self.method == SynthMethod.MATRIX_COMPLETION:
             # Convert to treatment matrix
-            Y, W,N_treated = convert_to_W(Y_treated, Y_control, T_pre)
+            Y, W, N_treated = convert_to_W(Y_treated, Y_control, T_pre)
             # Fit matrix completion model
-            lambda_param = self.reg_param if self.reg_param is not None else 1e+1
-            mcnnm = MatrixCompletionEstimator(lambda_param=lambda_param, max_iter=self.max_iterations, tol=1e-8,verbose=verbose)
-            mcnnm.fit(Y, 1.-W,self.unit_intercept,self.time_intercept)
+            lambda_param = self.reg_param if self.reg_param is not None else 1e1
+            mcnnm = MatrixCompletionEstimator(
+                lambda_param=lambda_param,
+                max_iter=self.max_iterations,
+                tol=1e-8,
+                verbose=verbose,
+            )
+            mcnnm.fit(Y, 1.0 - W, self.unit_intercept, self.time_intercept)
             weights = None
             synthetic = mcnnm.completed_matrix_[:N_treated].squeeze()
         else:
@@ -362,13 +374,13 @@ class Synth:
             # Restrict to pre-treatment period for Control
             Y_treat_pre = Y_treated[:T_pre]
             Y_ctrl_pre = Y_control2[:, :T_pre]
-        
+
             # Get weights and multiply by control outcomes
             weights = self._get_weights(Y_ctrl_pre, Y_treat_pre)
             synthetic = np.dot(Y_control2.T, weights)
 
         return weights, synthetic
-      
+
     def _jackknife_single_run(
         self, Y: np.ndarray, treated_units: np.ndarray, T_pre: int, leave_out_idx: int
     ) -> np.ndarray:

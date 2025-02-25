@@ -141,14 +141,14 @@ class SynthPlotter:
             ax.set_ylim(ylim)
 
         return ax
-    
+
     def plot_treatment_effects(
         self,
         results: Union[SynthResults, List[SynthResults]],
         T_pre: int,
         ax: Optional[plt.Axes] = None,
         title: Optional[str] = None,
-        legend_title: str = "Imputed Counterfactuals"
+        legend_title: str = "Imputed Counterfactuals",
     ) -> plt.Axes:
         """Plot synthetic control treatment effects.
 
@@ -252,7 +252,9 @@ class SynthPlotter:
                         label += " w/Time FEs"
                 else:
                     label = (
-                        method if method != "lp_norm" else f"lp constrained (p={result.p})"
+                        method
+                        if method != "lp_norm"
+                        else f"lp constrained (p={result.p})"
                     )
                 ax.plot(
                     result.unit_weights,
@@ -280,7 +282,9 @@ class SynthPlotter:
                         label += " w/Time FEs"
                 else:
                     label = (
-                        method if method != "lp_norm" else f"lp constrained (p={result.p})"
+                        method
+                        if method != "lp_norm"
+                        else f"lp constrained (p={result.p})"
                     )
                 ax.hist(
                     result.unit_weights,

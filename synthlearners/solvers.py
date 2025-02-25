@@ -105,7 +105,6 @@ def _solve_linear(
 def _solve_simplex(
     Y_control: np.ndarray, Y_treated: np.ndarray, max_iterations: int, tolerance: float
 ) -> np.ndarray:
-
     def f(w, grad):
         if grad.size > 0:
             grad[:] = _gradient(w, Y_control.T, Y_treated)
