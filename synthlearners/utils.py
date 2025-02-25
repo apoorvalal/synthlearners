@@ -5,7 +5,6 @@ import contextlib
 import joblib
 
 
-
 def prepare_panel(
     df: pd.DataFrame,
     unit_col: str,
@@ -115,6 +114,38 @@ def _prepare_panel_data(
         T_pre = unique_times.index(pre_treatment_period)
 
     return Y, W, treated_units, T_pre
+
+
+def convert_to_W(
+    Y_treated: np.ndarray, Y_control: np.ndarray, T_pre: int
+) -> np.ndarray:
+    """Convert observed outcomes to treatment matrix W.
+
+    Args:
+        Y_treated: Observed outcomes for treated units
+        Y_control: Observed outcomes for control units
+        T_pre: Number of pre-treatment periods
+
+    Returns:
+        W: Treatment matrix (N x T)
+    """
+
+    # if there are two dimensions first is number of treated units N_treated and second is number of time periods T otherwise N_treated = 1 and the dimention is the time periods
+    if len(Y_treated.shape) == 1:
+        Y_treated = Y_treated.reshape(1, -1)
+    N_treated, T = Y_treated.shape
+    N_control = Y_control.shape[0]
+
+    # Initialize W as zeros
+    W = np.zeros((N_treated + N_control, T))
+
+    # Set treated units to 1 in post-treatment periods
+    W[:N_treated, T_pre:] = 1
+
+    # Union Y_treated and Y_control
+    Y = np.vstack([Y_treated, Y_control])
+
+    return Y, W, N_treated
 
 
 @contextlib.contextmanager

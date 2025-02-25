@@ -106,7 +106,18 @@ class SynthPlotter:
         # Plot synthetic controls
         for result in results:
             method = result.method.value
-            label = method if method != "lp_norm" else f"lp constrained (p={result.p})"
+            if method == "matrix_completion":
+                label = "matrix_completion"
+                if result.unit_intercept and result.time_intercept:
+                    label += " w/Unit and Time FEs"
+                if result.unit_intercept and not result.time_intercept:
+                    label += " w/Unit FEs"
+                if not result.unit_intercept and result.time_intercept:
+                    label += " w/Time FEs"
+            else:
+                label = (
+                    method if method != "lp_norm" else f"lp constrained (p={result.p})"
+                )
 
             ax.plot(
                 result.synthetic_outcome,
@@ -128,6 +139,78 @@ class SynthPlotter:
         ax.legend(title=legend_title)
         if ylim:
             ax.set_ylim(ylim)
+
+        return ax
+
+    def plot_treatment_effects(
+        self,
+        results: Union[SynthResults, List[SynthResults]],
+        T_pre: int,
+        ax: Optional[plt.Axes] = None,
+        title: Optional[str] = None,
+        legend_title: str = "Imputed Counterfactuals",
+    ) -> plt.Axes:
+        """Plot synthetic control treatment effects.
+
+        Args:
+            results: Single or list of SynthResults objects
+            Y: Original panel data array
+            T_pre: Pre-treatment period cutoff
+            ax: Optional matplotlib axes
+            title: Optional plot title
+            legend_title: Title for the legend
+
+        Returns:
+            matplotlib Axes object
+        """
+        if ax is None:
+            _, ax = plt.subplots(1, 1, figsize=self.figsize)
+
+        if self.style:
+            plt.style.use(self.style)
+
+        # Convert single result to list
+        if isinstance(results, SynthResults):
+            results = [results]
+
+        # Plot synthetic controls
+        for result in results:
+            method = result.method.value
+            if method == "matrix_completion":
+                label = "matrix_completion"
+                if result.unit_intercept and result.time_intercept:
+                    label += " w/Unit and Time FEs"
+                if result.unit_intercept and not result.time_intercept:
+                    label += " w/Unit FEs"
+                if not result.unit_intercept and result.time_intercept:
+                    label += " w/Time FEs"
+            else:
+                label = (
+                    method if method != "lp_norm" else f"lp constrained (p={result.p})"
+                )
+
+            ax.plot(
+                result.treatment_effect(),
+                alpha=0.6,
+                label=label,
+                color=self.palette.get(label, None),
+            )
+
+        # Add treatment line
+        ax.axvline(
+            T_pre,
+            color=self.palette["treatment_line"],
+            linestyle="--",
+        )
+        ax.axhline(0, color="gray", linestyle=":")
+
+        title = "Treatment Effect \n ATT by Method"
+
+        ax.set_title(title)
+        ax.legend(title=legend_title)
+        ax.set_xlabel("Time Relative to Treatment")
+        ax.set_ylabel("Effect Size")
+        ax.legend()
 
         return ax
 
@@ -159,9 +242,20 @@ class SynthPlotter:
             # Plot weights comparison
             for result in results:
                 method = result.method.value
-                label = (
-                    method if method != "lp_norm" else f"lp constrained (p={result.p})"
-                )
+                if method == "matrix_completion":
+                    label = "matrix_completion"
+                    if result.unit_intercept and result.time_intercept:
+                        label += " w/Unit and Time FEs"
+                    if result.unit_intercept and not result.time_intercept:
+                        label += " w/Unit FEs"
+                    if not result.unit_intercept and result.time_intercept:
+                        label += " w/Time FEs"
+                else:
+                    label = (
+                        method
+                        if method != "lp_norm"
+                        else f"lp constrained (p={result.p})"
+                    )
                 ax.plot(
                     result.unit_weights,
                     label=label,
@@ -178,9 +272,20 @@ class SynthPlotter:
             # Plot weight distributions
             for result in results:
                 method = result.method.value
-                label = (
-                    method if method != "lp_norm" else f"lp constrained (p={result.p})"
-                )
+                if method == "matrix_completion":
+                    label = "matrix_completion"
+                    if result.unit_intercept and result.time_intercept:
+                        label += " w/Unit and Time FEs"
+                    if result.unit_intercept and not result.time_intercept:
+                        label += " w/Unit FEs"
+                    if not result.unit_intercept and result.time_intercept:
+                        label += " w/Time FEs"
+                else:
+                    label = (
+                        method
+                        if method != "lp_norm"
+                        else f"lp constrained (p={result.p})"
+                    )
                 ax.hist(
                     result.unit_weights,
                     alpha=0.6,
