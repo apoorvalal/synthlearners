@@ -31,7 +31,7 @@ features are indicated by
     - [ ] L2 weights (Arkhangelsky et al 2021)
     - [ ] time-distance penalised weights (Imbens et al 2024)
   - [ ] augmenting weights with outcome models ([Ben-Michael et al 2021](https://arxiv.org/abs/1811.04170))
-    - [ ] matrix completion ([Athey et al 2021](https://arxiv.org/abs/1710.10251))
+    - [x] matrix completion ([Athey et al 2021](https://arxiv.org/abs/1710.10251))
     - [ ] latent factor models ([Xu 2017](https://yiqingxu.org/papers/english/2016_Xu_gsynth/Xu_PA_2017.pdf), Lal et al 2024)
     - [ ] two-way kernel ridge weights ([Ben-Michael et al 2023](https://arxiv.org/abs/2110.07006))
 
