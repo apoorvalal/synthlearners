@@ -335,6 +335,22 @@ class MatrixCompletionEstimator:
         self.completed_matrix_ = L
         self.singular_values = s_thresholded
         return self
+    
+    def score(self, M, mask):
+        """
+        Compute the mean squared error between the observed and imputed entries.
+
+        Parameters:
+          M: 2D numpy array of observed outcomes
+          mask: binary 2D numpy array of the same shape as Y where 1 indicates an observed entry and 0 a missing one.
+
+        Returns:
+          float: mean squared error between observed and imputed entries
+        """
+        if self.completed_matrix_ is None:
+            raise ValueError("Model not yet fit.")
+
+        return np.mean((self.completed_matrix_ - M) ** 2 * mask)
 
     def fit(self, M, mask, unit_intercept=False, time_intercept=False):
         """
@@ -353,16 +369,31 @@ class MatrixCompletionEstimator:
             self.lambda_param
         )  # To mirror current approach. Will move to coming from CV optimization
 
-        if unit_intercept or time_intercept:
-            return self.NNM_fit(
+        init_uv = self.initialize_uv(M, mask, to_estimate_u=unit_intercept, to_estimate_v=time_intercept)
+        lambda_L_max = init_uv["lambda_L_max"]
+
+        # Create a list of lambda values starting at 0 up to lambda_L_max on a log scale
+        lambda_values = np.concatenate(([0], np.logspace(-5, np.log10(lambda_L_max), num=10)))
+
+        # loop over lambda values and fit the model
+        for lambda_L in lambda_values:
+            self.NNM_fit(
                 M,
                 mask,
                 lambda_L,
                 to_estimate_u=unit_intercept,
                 to_estimate_v=time_intercept,
             )
-        else:
-            return self.simple_fit(M, mask, lambda_L)
+
+        # return self.simple_fit(M, mask, lambda_L) - KEEP FOR RECORD OF SIMPLE IMPLEMENTATION
+
+        return self.NNM_fit(
+                M,
+                mask,
+                lambda_L,
+                to_estimate_u=unit_intercept,
+                to_estimate_v=time_intercept,
+            )
 
 
 # TODO: Add cross-validation per secion 4 in the paper to select lambda_param
