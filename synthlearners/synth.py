@@ -355,7 +355,6 @@ class Synth:
             # Fit matrix completion model
             lambda_param = self.reg_param if self.reg_param is not None else 1e1
             mcnnm = MatrixCompletionEstimator(
-                lambda_param=lambda_param,
                 max_iter=self.max_iterations,
                 tol=1e-8,
                 verbose=verbose,
