@@ -7,6 +7,8 @@ class PanelCrossValidator:
     A class implementing horizontal and vertical cross validation for panel data.
     Horizontal CV splits along rows (units/individuals)
     Vertical CV splits along columns (time periods) using forward-chaining validation
+
+    Credit: Written with assistance from Claude Copilot
     """
     
     def __init__(self, n_splits: int = 5, cv_ratio: float = 0.8, random_state: Optional[int] = None):
