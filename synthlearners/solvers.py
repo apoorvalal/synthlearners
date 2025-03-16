@@ -59,40 +59,41 @@ def _choose_lambda(
     """Choose optimal lambda via time series cross-validation."""
     T_pre = Y_treated.shape[0]
     cv_ratio = (T_pre - val_window) / T_pre
+    train_window = T_pre - val_window
     lambda_grid = lam_grid * np.std(Y_control)
     cv_scores = []
 
     for lambda_val in lambda_grid:
-        split_errors = []
-
-        # Use PanelCrossValidator for vertical cross-validation
+        # Initialize panel cross validator
         cv = PanelCrossValidator(n_splits=n_splits, cv_ratio=cv_ratio)
-        X = np.vstack([Y_control.T, Y_treated])  # Combine data for CV
-        # TO DO: CAUSING ISSUES IN SOME SETTING, ALSO CAUSING ISSUES IN THE TESTS
-        masks = cv.create_train_test_masks(X, split_type='vertical')
-
+        
+        # Get train/test splits
+        X = np.vstack((Y_control, Y_treated.reshape(1, -1)))  # Combine data into single matrix
+        split_errors = []
+        
+        # Get vertical splits with forward chaining
+        masks = cv.vertical_split(X, min_train_size=train_window)
+        
         for train_mask, test_mask in masks:
-            # Get training data using mask
-            train_control = Y_control[:, train_mask[0]]
-            train_treated = Y_treated[train_mask[0]]
+            # Extract training data 
+            Y_control_train = Y_control[:, train_mask[0]]
+            Y_treated_train = Y_treated[train_mask[0]]
             
-            # Get validation data using mask
-            val_control = Y_control[:, test_mask[0]]
-            val_treated = Y_treated[test_mask[0]]
-
             # Get weights using training data
             weights = _solve_lp_norm(
-            train_control,
-            train_treated,
+            Y_control_train,
+            Y_treated_train,
             p=p,
             max_iterations=10000,
-            tolerance=1e-8,
-            reg_param=lambda_val,
+            tolerance=1e-8, 
+            reg_param=lambda_val
             )
-
-            # Compute validation error
-            val_pred = np.dot(val_control.T, weights)
-            rmse = np.sqrt(np.mean((val_pred - val_treated) ** 2))
+            
+            # Compute validation error on test period
+            Y_control_test = Y_control[:, test_mask[0]]
+            Y_treated_test = Y_treated[test_mask[0]]
+            val_pred = np.dot(Y_control_test.T, weights)
+            rmse = np.sqrt(np.mean((val_pred - Y_treated_test) ** 2))
             split_errors.append(rmse)
         cv_scores.append(np.mean(split_errors))
     return lambda_grid[np.argmin(cv_scores)]

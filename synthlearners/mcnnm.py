@@ -383,7 +383,7 @@ class MatrixCompletionEstimator:
         # NOTE: Paper uses random splits for lambda selection
 
         # Loop over lambda values to find best one using cross validation
-        # NOTE: Note taking advantage of sequential nature of lambda values as suggested in the paper
+        # NOTE: Not taking advantage of sequential nature of lambda values as suggested in the paper
         for lambda_L in lambda_values:
             if self.verbose:
                 print(f"Trying lambda: {lambda_L}")

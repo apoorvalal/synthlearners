@@ -26,8 +26,11 @@ def test_horizontal_split():
         assert not np.any(train_mask & test_mask)
         
         # Check that splits are along rows (units)
-        assert np.all(train_mask.sum(axis=1) == 0) | np.all(train_mask.sum(axis=1) == X.shape[1])
-        assert np.all(test_mask.sum(axis=1) == 0) | np.all(test_mask.sum(axis=1) == X.shape[1])
+        train_row_sums = train_mask.sum(axis=1)
+        test_row_sums = test_mask.sum(axis=1)
+        
+        assert np.all((train_row_sums == 0) | (train_row_sums == X.shape[0]))
+        assert np.all((test_row_sums == 0) | (test_row_sums == X.shape[0]))
 
 
 def test_vertical_split():
@@ -39,6 +42,12 @@ def test_vertical_split():
     
     # Number of folds limited by min_train_size constraint
     assert len(masks) <= 5
+    
+    # Debug prints
+    for i, (train_mask, test_mask) in enumerate(masks):
+        print(f"\nFold {i}:")
+        print("Train mask column sums:", train_mask.sum(axis=0))
+        print("Test mask column sums:", test_mask.sum(axis=0))
     
     for train_mask, test_mask in masks:
         # Check mask shapes
@@ -53,8 +62,11 @@ def test_vertical_split():
         assert not np.any(train_mask & test_mask)
         
         # Check that splits are along columns (time)
-        assert np.all(train_mask.sum(axis=0) == 0) | np.all(train_mask.sum(axis=0) == X.shape[0])
-        assert np.all(test_mask.sum(axis=0) == 0) | np.all(test_mask.sum(axis=0) == X.shape[0])
+        train_column_sums = train_mask.sum(axis=0)
+        test_column_sums = test_mask.sum(axis=0)
+        
+        assert np.all((train_column_sums == 0) | (train_column_sums == X.shape[0]))
+        assert np.all((test_column_sums == 0) | (test_column_sums == X.shape[0]))
 
 
 def test_random_split():
