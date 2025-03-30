@@ -1,6 +1,9 @@
 import numpy as np
 from sklearn.model_selection import KFold
 from typing import Tuple, List, Optional
+from joblib import Parallel, delayed
+from tqdm.auto import tqdm
+from .utils import tqdm_joblib
 
 class PanelCrossValidator:
     """
@@ -11,7 +14,11 @@ class PanelCrossValidator:
     Credit: Written with assistance from Claude Copilot
     """
     
-    def __init__(self, n_splits: int = 5, cv_ratio: float = 0.8, random_state: Optional[int] = None):
+    def __init__(self, 
+                 n_splits: int = 5, 
+                 n_jobs: int = 5,
+                 cv_ratio: float = 0.8, 
+                 random_state: Optional[int] = None):
         """
         Initialize the cross validator.
         
@@ -23,6 +30,7 @@ class PanelCrossValidator:
         if not 0 < cv_ratio < 1:
             raise ValueError("cv_ratio must be between 0 and 1")
         self.n_splits = n_splits
+        self.n_jobs = n_jobs
         self.cv_ratio = cv_ratio
         self.random_state = random_state
         self.kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
@@ -123,32 +131,33 @@ class PanelCrossValidator:
         else:
             return self.random_split(X)
 
-def cross_validate(estimator, X: np.ndarray, split_type: str = 'horizontal', 
-                  n_splits: int = 5, cv_ratio: float = 0.8, random_state: Optional[int] = None):
+def cross_validate(estimator, X: np.ndarray, cv: PanelCrossValidator, 
+                   split_type: str = 'horizontal', fit_method: str = 'fit', 
+                   fit_args: dict = None):
     """
     Perform cross validation for panel data.
-    
+                
     Args:
         estimator: An estimator object implementing fit and predict
         X: Input matrix of shape (n_units, n_times)
+        cv: PanelCrossValidator object
         split_type: Type of split ('horizontal' or 'vertical')
-        n_splits: Number of folds
-        cv_ratio: Ratio of data to use for training (between 0 and 1)
-        random_state: Random seed
-        
+        fit_method: Name of the fit method to call on estimator
+        fit_args: Dictionary of additional arguments to pass to fit_method
+                    
     Returns:
         List of scores for each fold
-    """
-    cv = PanelCrossValidator(n_splits=n_splits, cv_ratio=cv_ratio, random_state=random_state)
-    masks = cv.create_train_test_masks(X, split_type)
-    scores = []
-    
-    for train_mask, test_mask in masks:
-        estimator.fit(X, train_mask)
-        predictions = estimator.predict(test_mask)
-        score = estimator.score(X[test_mask], predictions[test_mask])
-        scores.append(score)
-    
+    """    
+    if fit_args is None:
+        fit_args = {}
+
+    masks = cv.create_train_test_masks(X, split_type)                
+    with tqdm_joblib(tqdm(total=cv.n_splits, desc="Cross validation")):
+        scores = Parallel(n_jobs=cv.n_jobs)(
+            delayed(lambda m: estimator.score(X, getattr(estimator, fit_method)(X, m[0], **fit_args), m[1]))
+            (mask_pair) for mask_pair in masks
+        )
+                
     return scores
 
 # TO DO:

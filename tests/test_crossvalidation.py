@@ -95,34 +95,6 @@ def test_random_split():
         n_test = int(X.size / 5)
         assert abs(test_mask.sum() - n_test) <= 1
 
-
-def test_cross_validation_scores(simulated_data):
-    """Test that cross validation returns reasonable scores."""
-    Y, config = simulated_data
-    
-    class DummyEstimator:
-        def fit(self, X, mask):
-            self.mean = X[mask].mean()
-            
-        def predict(self, mask):
-            return np.full_like(mask, fill_value=self.mean, dtype=float)
-            
-        def score(self, y_true, y_pred):
-            return np.mean((y_true - y_pred) ** 2)  # MSE
-    
-    estimator = DummyEstimator()
-    
-    # Test all split types
-    for split_type in ['horizontal', 'vertical', 'random']:
-        scores = cross_validate(estimator, Y, split_type=split_type, n_splits=5)
-        
-        # Check we get a score per fold
-        assert len(scores) == 5
-        
-        # Check scores are non-negative (MSE)
-        assert np.all(np.array(scores) >= 0)
-
-
 def test_split_type_validation():
     """Test that invalid split types raise appropriate errors."""
     cv = PanelCrossValidator(n_splits=5)
@@ -130,3 +102,50 @@ def test_split_type_validation():
     
     with pytest.raises(ValueError):
         cv.create_train_test_masks(X, split_type='invalid')
+
+def test_cross_validate():
+    """Test that cross_validate returns expected results."""
+    class MockEstimator:
+        def fit(self, X, mask, **kwargs):
+            return X * mask
+            
+        def score(self, X, X_fitted, mask):
+            return np.sum(X * mask == X_fitted * mask)
+    
+    # Create test data
+    X = np.random.randn(10, 20)
+    cv = PanelCrossValidator(n_splits=3, n_jobs=1, cv_ratio=0.8, random_state=42)
+    estimator = MockEstimator()
+    
+    # Test horizontal split
+    horizontal_scores = cross_validate(estimator, X, cv, split_type='horizontal')
+    assert len(horizontal_scores) == 3
+    assert all(isinstance(score, (int, float, np.number)) for score in horizontal_scores)
+    
+    # Test vertical split
+    vertical_scores = cross_validate(estimator, X, cv, split_type='vertical')
+    assert len(vertical_scores) <= 3  # Limited by min_train_size
+    assert all(isinstance(score, (int, float, np.number)) for score in vertical_scores)
+    
+    # Test random split
+    random_scores = cross_validate(estimator, X, cv, split_type='random')
+    assert len(random_scores) == 3
+    assert all(isinstance(score, (int, float, np.number)) for score in random_scores)
+    
+    # Test with custom fit method and args
+    custom_scores = cross_validate(
+        estimator, 
+        X, 
+        cv,
+        split_type='horizontal',
+        fit_method='fit',
+        fit_args={'extra_arg': 42}
+    )
+    assert len(custom_scores) == 3
+    
+    # Test error handling
+    with pytest.raises(ValueError):
+        cross_validate(estimator, X, cv, split_type='invalid')
+    
+    with pytest.raises(AttributeError):
+        cross_validate(estimator, X, cv, fit_method='invalid_method')

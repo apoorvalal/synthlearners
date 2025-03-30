@@ -292,7 +292,7 @@ class MatrixCompletionEstimator:
         self.completed_matrix_ = self.compute_matrix(L, u, v)
         self.component_matrix = {"L": L, "u": u, "v": v}
         self.singular_values = sing
-        return self
+        return self.completed_matrix_
 
     # Simple SVT no FE (self contained for explainability)
     def simple_fit(self, M, mask, lambda_L):
@@ -330,7 +330,7 @@ class MatrixCompletionEstimator:
         self.singular_values = s_thresholded
         return self
     
-    def score(self, M, mask):
+    def score(self, M, completed_matrix_, mask):
         """
         Compute the mean squared error between the observed and imputed entries.
 
@@ -341,10 +341,8 @@ class MatrixCompletionEstimator:
         Returns:
           float: mean squared error between observed and imputed entries
         """
-        if self.completed_matrix_ is None:
-            raise ValueError("Model not yet fit.")
 
-        return np.mean((self.completed_matrix_ - M) ** 2 * mask)
+        return np.mean((completed_matrix_ - M) ** 2 * mask)
 
     def fit(self, M, mask, unit_intercept=False, time_intercept=False, cv_split_type='random'):
         """
@@ -369,36 +367,23 @@ class MatrixCompletionEstimator:
         # cv_ratio is share of mask that is observed
         cv_ratio_obs = np.sum(mask) / mask.size
 
-        # Initialize cross-validator and store best results
-        cv = PanelCrossValidator(n_splits=5, cv_ratio = cv_ratio_obs)
-        best_lambda = None
-        best_score = float('inf')
-
         if self.verbose:
             print(f"Max lambda: {lambda_L_max}")
             print(f"CV ratio in observation: {cv_ratio_obs}")
 
-        # Get cross validation splits
-        cv_splits = cv.create_train_test_masks(M, split_type=cv_split_type)
-        # NOTE: Paper uses random splits for lambda selection
+        # Initialize cross-validator and store best results
+        cv = PanelCrossValidator(n_splits=5, cv_ratio = cv_ratio_obs)
+        best_lambda = None
+        best_score = float('inf')
 
         # Loop over lambda values to find best one using cross validation
         # NOTE: Not taking advantage of sequential nature of lambda values as suggested in the paper
         for lambda_L in lambda_values:
             if self.verbose:
                 print(f"Trying lambda: {lambda_L}")
-            fold_scores = []
-            
-            # For each fold
-            for train_mask, test_mask in cv_splits:
-                # Fit on training data
-                self.NNM_fit(M, train_mask, lambda_L, 
-                             to_estimate_u=unit_intercept,
-                             to_estimate_v=time_intercept)
-                
-                # Score on test data
-                fold_score = self.score(M, test_mask)
-                fold_scores.append(fold_score)
+            fold_scores = cross_validate(estimator=self, X=M, cv=cv, 
+                                       split_type=cv_split_type, 
+                                       fit_method='NNM_fit',fit_args={'lambda_L': lambda_L})
             
             # Calculate mean score across folds    
             mean_score = np.mean(fold_scores)

@@ -72,7 +72,7 @@ def _choose_lambda(
         split_errors = []
         
         # Get vertical splits with forward chaining
-        masks = cv.vertical_split(X, min_train_size=train_window)
+        masks = cv.create_train_test_masks(X, split_type='vertical', min_train_size=train_window)
         
         for train_mask, test_mask in masks:
             # Extract training data 
