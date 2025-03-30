@@ -355,14 +355,13 @@ class Synth:
             # Fit matrix completion model
             lambda_param = self.reg_param if self.reg_param is not None else 1e1
             mcnnm = MatrixCompletionEstimator(
-                lambda_param=lambda_param,
                 max_iter=self.max_iterations,
                 tol=1e-8,
                 verbose=verbose,
             )
-            mcnnm.fit(Y, 1.0 - W, self.unit_intercept, self.time_intercept)
+            completed_matrix = mcnnm.fit(Y, 1.0 - W, self.unit_intercept, self.time_intercept)
             weights = None
-            synthetic = mcnnm.completed_matrix_[:N_treated].squeeze()
+            synthetic = completed_matrix[:N_treated].squeeze()
         else:
             # Add time intercept if needed
             Y_control2 = (

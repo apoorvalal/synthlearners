@@ -1,5 +1,5 @@
 import numpy as np
-
+from synthlearners.crossvalidation import PanelCrossValidator, cross_validate
 
 class MatrixCompletionEstimator:
     """
@@ -24,7 +24,7 @@ class MatrixCompletionEstimator:
 
     """
 
-    def __init__(self, lambda_param=1e-3, max_iter=500, tol=1e-4, verbose=False):
+    def __init__(self, max_iter=500, tol=1e-4, verbose=False):
         """
         Parameters:
           lambda_param: regularization strength (the weight on the nuclear norm penalty)
@@ -32,7 +32,6 @@ class MatrixCompletionEstimator:
           tol: relative tolerance for convergence
           verbose: if True, print progress information
         """
-        self.lambda_param = lambda_param
         self.max_iter = max_iter
         self.tol = tol
         self.verbose = verbose
@@ -261,8 +260,6 @@ class MatrixCompletionEstimator:
 
         if self.verbose:
             print(f"shrink_treshhold: {shrink_treshhold}")
-            print(f"lambda_L_max: {lambda_L_max}")
-            print(f"shrink_treshhold_max: {shrink_treshhold_max}")
 
         for iter in range(self.max_iter):
             # Update u
@@ -291,14 +288,11 @@ class MatrixCompletionEstimator:
             print(
                 f"Terminated at iteration: {term_iter}, for lambda_L: {lambda_L}, with obj_val: {new_obj_val}"
             )
-            print(f"Final Singular Values ({sing.shape}): {sing}")
-            print(f"unit FE ({u.shape}): {u}")
-            print(f"time FE ({v.shape}): {v}")
 
         self.completed_matrix_ = self.compute_matrix(L, u, v)
         self.component_matrix = {"L": L, "u": u, "v": v}
         self.singular_values = sing
-        return self
+        return self.completed_matrix_
 
     # Simple SVT no FE (self contained for explainability)
     def simple_fit(self, M, mask, lambda_L):
@@ -335,8 +329,22 @@ class MatrixCompletionEstimator:
         self.completed_matrix_ = L
         self.singular_values = s_thresholded
         return self
+    
+    def score(self, M, completed_matrix_, mask):
+        """
+        Compute the mean squared error between the observed and imputed entries.
 
-    def fit(self, M, mask, unit_intercept=False, time_intercept=False):
+        Parameters:
+          M: 2D numpy array of observed outcomes
+          mask: binary 2D numpy array of the same shape as Y where 1 indicates an observed entry and 0 a missing one.
+
+        Returns:
+          float: mean squared error between observed and imputed entries
+        """
+
+        return np.mean((completed_matrix_ - M) ** 2 * mask)
+
+    def fit(self, M, mask, unit_intercept=False, time_intercept=False, cv_split_type='random'):
         """
         Fit the matrix completion model.
 
@@ -349,20 +357,51 @@ class MatrixCompletionEstimator:
         Returns:
           self, with the completed matrix stored in self.completed_matrix_
         """
-        lambda_L = (
-            self.lambda_param
-        )  # To mirror current approach. Will move to coming from CV optimization
 
-        if unit_intercept or time_intercept:
-            return self.NNM_fit(
-                M,
-                mask,
-                lambda_L,
-                to_estimate_u=unit_intercept,
-                to_estimate_v=time_intercept,
-            )
-        else:
-            return self.simple_fit(M, mask, lambda_L)
+        init_uv = self.initialize_uv(M, mask, to_estimate_u=unit_intercept, to_estimate_v=time_intercept)
+        lambda_L_max = init_uv["lambda_L_max"]
+
+        # Create a list of lambda values starting at 0 up to lambda_L_max on a log scale
+        lambda_values = np.concatenate(([0], np.logspace(-5, np.log10(lambda_L_max), num=10)))
+
+        # cv_ratio is share of mask that is observed
+        cv_ratio_obs = np.sum(mask) / mask.size
+
+        if self.verbose:
+            print(f"Max lambda: {lambda_L_max}")
+            print(f"CV ratio in observation: {cv_ratio_obs}")
+
+        # Initialize cross-validator and store best results
+        cv = PanelCrossValidator(n_splits=5, cv_ratio = cv_ratio_obs)
+        best_lambda = None
+        best_score = float('inf')
+
+        # Loop over lambda values to find best one using cross validation
+        # NOTE: Not taking advantage of sequential nature of lambda values as suggested in the paper
+        for lambda_L in lambda_values:
+            if self.verbose:
+                print(f"Trying lambda: {lambda_L}")
+            fold_scores = cross_validate(estimator=self, X=M, cv=cv, 
+                                       split_type=cv_split_type, 
+                                       fit_method='NNM_fit',fit_args={'lambda_L': lambda_L})
+            
+            # Calculate mean score across folds    
+            mean_score = np.mean(fold_scores)
+            
+            # Update best if this lambda gives better score
+            if mean_score < best_score:
+                best_score = mean_score
+                best_lambda = lambda_L
+
+        if self.verbose:
+            print(f"Lambda list: {lambda_values}")
+            print(f"Best lambda: {best_lambda}, Best score: {best_score}")
+
+        # Final fit using best lambda
+        return self.NNM_fit(M, mask, best_lambda,
+                     to_estimate_u=unit_intercept,
+                     to_estimate_v=time_intercept)
+
+        # return self.simple_fit(M, mask, lambda_L) - KEEP FOR RECORD OF SIMPLE IMPLEMENTATION if not intercepts
 
 
-# TODO: Add cross-validation per secion 4 in the paper to select lambda_param
