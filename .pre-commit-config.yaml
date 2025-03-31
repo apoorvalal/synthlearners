@@ -1,15 +1,19 @@
 repos:
   - repo: local
     hooks:
-      - id: ruff
-        name: ruff
-        entry: pixi run -e lint ruff check --fix --exit-non-zero-on-fix --force-exclude
-        language: system
-        types_or: [python]
-        require_serial: true
       - id: pytest
         name: pytest
         entry: pytest
         language: system
         pass_filenames: false
         always_run: true
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.2
+    hooks:
+      # Run the linter.
+      - id: ruff
+        types_or: [python, pyi]
+        args: [--fix]
+      # Run the formatter.
+      - id: ruff-format
+        types_or: [python, pyi]
