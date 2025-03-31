@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from scipy.special import expit
 from dataclasses import dataclass
-from typing import Callable, Optional, Tuple, Union, Dict
+from typing import Optional, Tuple, Union, Dict
 from abc import ABC, abstractmethod
 
 
@@ -240,8 +240,7 @@ class PanelSimulator:
             self.treatment_effect = effect
         else:
             raise TypeError(
-                "Treatment effect must be a number or numpy array, "
-                f"got {type(effect)}"
+                f"Treatment effect must be a number or numpy array, got {type(effect)}"
             )
 
     def assign_treatment(self, L: np.ndarray) -> np.ndarray:

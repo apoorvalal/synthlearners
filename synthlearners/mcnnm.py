@@ -1,6 +1,7 @@
 import numpy as np
 from synthlearners.crossvalidation import PanelCrossValidator, cross_validate
 
+
 class MatrixCompletionEstimator:
     """
     A basic matrix completion estimator for treatment effect estimation.
@@ -245,7 +246,7 @@ class MatrixCompletionEstimator:
         L_init = np.zeros_like(M)
         init_uv = self.initialize_uv(M, mask, to_estimate_u, to_estimate_v)
         lambda_L_max = init_uv["lambda_L_max"]
-        shrink_treshhold_max = (
+        shrink_treshhold_max = (  # noqa
             lambda_L_max * np.sum(mask) / 2
         )  # For now keep consistent with other method
         u_init = init_uv["u"]
@@ -259,7 +260,7 @@ class MatrixCompletionEstimator:
         term_iter = 0
 
         if self.verbose:
-            print(f"shrink_treshhold: {shrink_treshhold}")
+            print(f"shrink threshold: {shrink_treshhold}")
 
         for iter in range(self.max_iter):
             # Update u
@@ -311,7 +312,7 @@ class MatrixCompletionEstimator:
         L = np.zeros_like(mask * M)
         shrink_treshhold = lambda_L * np.sum(mask) / 2
         if self.verbose:
-            print(f"shrink_treshhold: {shrink_treshhold}")
+            print(f"shrink threshold: {shrink_treshhold}")
         for it in range(self.max_iter):
             L_old = L.copy()
             shrink_A_input = mask * M + (1 - mask) * L_old
@@ -329,7 +330,7 @@ class MatrixCompletionEstimator:
         self.completed_matrix_ = L
         self.singular_values = s_thresholded
         return self
-    
+
     def score(self, M, completed_matrix_, mask):
         """
         Compute the mean squared error between the observed and imputed entries.
@@ -344,7 +345,14 @@ class MatrixCompletionEstimator:
 
         return np.mean((completed_matrix_ - M) ** 2 * mask)
 
-    def fit(self, M, mask, unit_intercept=False, time_intercept=False, cv_split_type='random'):
+    def fit(
+        self,
+        M,
+        mask,
+        unit_intercept=False,
+        time_intercept=False,
+        cv_split_type="random",
+    ):
         """
         Fit the matrix completion model.
 
@@ -358,11 +366,15 @@ class MatrixCompletionEstimator:
           self, with the completed matrix stored in self.completed_matrix_
         """
 
-        init_uv = self.initialize_uv(M, mask, to_estimate_u=unit_intercept, to_estimate_v=time_intercept)
+        init_uv = self.initialize_uv(
+            M, mask, to_estimate_u=unit_intercept, to_estimate_v=time_intercept
+        )
         lambda_L_max = init_uv["lambda_L_max"]
 
         # Create a list of lambda values starting at 0 up to lambda_L_max on a log scale
-        lambda_values = np.concatenate(([0], np.logspace(-5, np.log10(lambda_L_max), num=10)))
+        lambda_values = np.concatenate(
+            ([0], np.logspace(-5, np.log10(lambda_L_max), num=10))
+        )
 
         # cv_ratio is share of mask that is observed
         cv_ratio_obs = np.sum(mask) / mask.size
@@ -372,22 +384,27 @@ class MatrixCompletionEstimator:
             print(f"CV ratio in observation: {cv_ratio_obs}")
 
         # Initialize cross-validator and store best results
-        cv = PanelCrossValidator(n_splits=5, cv_ratio = cv_ratio_obs)
+        cv = PanelCrossValidator(n_splits=5, cv_ratio=cv_ratio_obs)
         best_lambda = None
-        best_score = float('inf')
+        best_score = float("inf")
 
         # Loop over lambda values to find best one using cross validation
         # NOTE: Not taking advantage of sequential nature of lambda values as suggested in the paper
         for lambda_L in lambda_values:
             if self.verbose:
                 print(f"Trying lambda: {lambda_L}")
-            fold_scores = cross_validate(estimator=self, X=M, cv=cv, 
-                                       split_type=cv_split_type, 
-                                       fit_method='NNM_fit',fit_args={'lambda_L': lambda_L})
-            
-            # Calculate mean score across folds    
+            fold_scores = cross_validate(
+                estimator=self,
+                X=M,
+                cv=cv,
+                split_type=cv_split_type,
+                fit_method="NNM_fit",
+                fit_args={"lambda_L": lambda_L},
+            )
+
+            # Calculate mean score across folds
             mean_score = np.mean(fold_scores)
-            
+
             # Update best if this lambda gives better score
             if mean_score < best_score:
                 best_score = mean_score
@@ -398,10 +415,12 @@ class MatrixCompletionEstimator:
             print(f"Best lambda: {best_lambda}, Best score: {best_score}")
 
         # Final fit using best lambda
-        return self.NNM_fit(M, mask, best_lambda,
-                     to_estimate_u=unit_intercept,
-                     to_estimate_v=time_intercept)
+        return self.NNM_fit(
+            M,
+            mask,
+            best_lambda,
+            to_estimate_u=unit_intercept,
+            to_estimate_v=time_intercept,
+        )
 
         # return self.simple_fit(M, mask, lambda_L) - KEEP FOR RECORD OF SIMPLE IMPLEMENTATION if not intercepts
-
-
