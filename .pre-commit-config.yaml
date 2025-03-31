@@ -7,15 +7,15 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.2
-    hooks:
-      # Run the linter.
       - id: ruff
+        entry: ruff
+        name: ruff
+        language: system
         types_or: [python, pyi]
         args: [--fix]
-        files: ^synthlearners/
       # Run the formatter.
       - id: ruff-format
+        name: fmt
+        entry: ruff-format
         types_or: [python, pyi]
-        files: ^synthlearners/
+        language: system
