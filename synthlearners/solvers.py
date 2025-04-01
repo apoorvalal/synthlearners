@@ -66,29 +66,33 @@ def _choose_lambda(
     for lambda_val in lambda_grid:
         # Initialize panel cross validator
         cv = PanelCrossValidator(n_splits=n_splits, cv_ratio=cv_ratio)
-        
+
         # Get train/test splits
-        X = np.vstack((Y_control, Y_treated.reshape(1, -1)))  # Combine data into single matrix
+        X = np.vstack(
+            (Y_control, Y_treated.reshape(1, -1))
+        )  # Combine data into single matrix
         split_errors = []
-        
+
         # Get vertical splits with forward chaining
-        masks = cv.create_train_test_masks(X, split_type='vertical', min_train_size=train_window)
-        
+        masks = cv.create_train_test_masks(
+            X, split_type="vertical", min_train_size=train_window
+        )
+
         for train_mask, test_mask in masks:
-            # Extract training data 
+            # Extract training data
             Y_control_train = Y_control[:, train_mask[0]]
             Y_treated_train = Y_treated[train_mask[0]]
-            
+
             # Get weights using training data
             weights = _solve_lp_norm(
-            Y_control_train,
-            Y_treated_train,
-            p=p,
-            max_iterations=10000,
-            tolerance=1e-8, 
-            reg_param=lambda_val
+                Y_control_train,
+                Y_treated_train,
+                p=p,
+                max_iterations=10000,
+                tolerance=1e-8,
+                reg_param=lambda_val,
             )
-            
+
             # Compute validation error on test period
             Y_control_test = Y_control[:, test_mask[0]]
             Y_treated_test = Y_treated[test_mask[0]]

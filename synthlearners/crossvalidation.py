@@ -5,6 +5,7 @@ from joblib import Parallel, delayed
 from tqdm.auto import tqdm
 from .utils import tqdm_joblib
 
+
 class PanelCrossValidator:
     """
     A class implementing horizontal and vertical cross validation for panel data.
@@ -13,15 +14,17 @@ class PanelCrossValidator:
 
     Credit: Written with assistance from Claude Copilot
     """
-    
-    def __init__(self, 
-                 n_splits: int = 5, 
-                 n_jobs: int = 5,
-                 cv_ratio: float = 0.8, 
-                 random_state: Optional[int] = None):
+
+    def __init__(
+        self,
+        n_splits: int = 5,
+        n_jobs: int = 5,
+        cv_ratio: float = 0.8,
+        random_state: Optional[int] = None,
+    ):
         """
         Initialize the cross validator.
-        
+
         Args:
             n_splits: Number of folds for cross validation
             cv_ratio: Ratio of data to use for training (between 0 and 1)
@@ -34,14 +37,14 @@ class PanelCrossValidator:
         self.cv_ratio = cv_ratio
         self.random_state = random_state
         self.kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
-    
+
     def horizontal_split(self, X: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray]]:
         """
         Perform horizontal cross validation (splitting along rows).
-        
+
         Args:
             X: Input matrix of shape (n_units, n_times)
-            
+
         Returns:
             List of (train_mask, test_mask) tuples for each fold
         """
@@ -55,15 +58,17 @@ class PanelCrossValidator:
             test_mask[test_idx, :] = True
             masks.append((train_mask, test_mask))
         return masks
-    
-    def vertical_split(self, X: np.ndarray, min_train_size: Optional[int] = None) -> List[Tuple[np.ndarray, np.ndarray]]:
+
+    def vertical_split(
+        self, X: np.ndarray, min_train_size: Optional[int] = None
+    ) -> List[Tuple[np.ndarray, np.ndarray]]:
         """
         Perform vertical cross validation using forward-chaining validation.
-        
+
         Args:
             X: Input matrix of shape (n_units, n_times)
             min_train_size: Minimum number of time periods to include in training set
-            
+
         Returns:
             List of (train_mask, test_mask) tuples for each fold
         """
@@ -71,15 +76,15 @@ class PanelCrossValidator:
         masks = []
         if min_train_size is None:
             min_train_size = int(n_times * self.cv_ratio)
-        
+
         for test_size in range(1, min(self.n_splits + 1, n_times - min_train_size + 1)):
             train_mask = np.zeros(X.shape, dtype=bool)
             test_mask = np.zeros(X.shape, dtype=bool)
-            train_mask[:, :n_times - test_size] = True
-            test_mask[:, n_times - test_size:] = True
+            train_mask[:, : n_times - test_size] = True
+            test_mask[:, n_times - test_size :] = True
             masks.append((train_mask, test_mask))
         return masks
-    
+
     def random_split(self, X: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray]]:
         """
         Perform random cross validation (splitting across all elements).
@@ -94,49 +99,64 @@ class PanelCrossValidator:
         total_elements = n_units * n_times
         train_size = int(total_elements * self.cv_ratio)
         masks = []
-        
+
         for _ in range(self.n_splits):
             train_mask = np.zeros(X.shape, dtype=bool)
             test_mask = np.zeros(X.shape, dtype=bool)
-            
+
             # Randomly select elements for training set
-            train_elements = np.random.choice(total_elements, size=train_size, replace=False)
+            train_elements = np.random.choice(
+                total_elements, size=train_size, replace=False
+            )
             train_rows = train_elements // n_times
             train_cols = train_elements % n_times
             train_mask[train_rows, train_cols] = True
             test_mask = ~train_mask
-            
+
             masks.append((train_mask, test_mask))
         return masks
-    
-    def create_train_test_masks(self, X: np.ndarray, split_type: str = 'horizontal', min_train_size: Optional[int] = None) -> List[Tuple[np.ndarray, np.ndarray]]:
+
+    def create_train_test_masks(
+        self,
+        X: np.ndarray,
+        split_type: str = "horizontal",
+        min_train_size: Optional[int] = None,
+    ) -> List[Tuple[np.ndarray, np.ndarray]]:
         """
         Create boolean masks for train and test sets.
-        
+
         Args:
             X: Input matrix of shape (n_units, n_times)
             split_type: Type of split ('horizontal', 'vertical', or 'random')
             min_train_size: Minimum number of time periods to include in training set
-        
+
         Returns:
             List of (train_mask, test_mask) tuples for each fold
         """
-        if split_type not in ['horizontal', 'vertical', 'random']:
-            raise ValueError("Invalid split_type. Expected one of ['horizontal', 'vertical', 'random']")
-        
-        if split_type == 'horizontal':
+        if split_type not in ["horizontal", "vertical", "random"]:
+            raise ValueError(
+                "Invalid split_type. Expected one of ['horizontal', 'vertical', 'random']"
+            )
+
+        if split_type == "horizontal":
             return self.horizontal_split(X)
-        elif split_type == 'vertical':
+        elif split_type == "vertical":
             return self.vertical_split(X, min_train_size=min_train_size)
         else:
             return self.random_split(X)
 
-def cross_validate(estimator, X: np.ndarray, cv: PanelCrossValidator, 
-                   split_type: str = 'horizontal', fit_method: str = 'fit', 
-                   fit_args: dict = None):
+
+def cross_validate(
+    estimator,
+    X: np.ndarray,
+    cv: PanelCrossValidator,
+    split_type: str = "horizontal",
+    fit_method: str = "fit",
+    fit_args: dict = None,
+):
     """
     Perform cross validation for panel data.
-                
+
     Args:
         estimator: An estimator object implementing fit and predict
         X: Input matrix of shape (n_units, n_times)
@@ -144,21 +164,26 @@ def cross_validate(estimator, X: np.ndarray, cv: PanelCrossValidator,
         split_type: Type of split ('horizontal' or 'vertical')
         fit_method: Name of the fit method to call on estimator
         fit_args: Dictionary of additional arguments to pass to fit_method
-                    
+
     Returns:
         List of scores for each fold
-    """    
+    """
     if fit_args is None:
         fit_args = {}
 
-    masks = cv.create_train_test_masks(X, split_type)                
+    masks = cv.create_train_test_masks(X, split_type)
     with tqdm_joblib(tqdm(total=cv.n_splits, desc="Cross validation")):
         scores = Parallel(n_jobs=cv.n_jobs)(
-            delayed(lambda m: estimator.score(X, getattr(estimator, fit_method)(X, m[0], **fit_args), m[1]))
-            (mask_pair) for mask_pair in masks
+            delayed(
+                lambda m: estimator.score(
+                    X, getattr(estimator, fit_method)(X, m[0], **fit_args), m[1]
+                )
+            )(mask_pair)
+            for mask_pair in masks
         )
-                
+
     return scores
+
 
 # TO DO:
 # - Compare MC results with random, horizontal, and vertical cross-validation

@@ -5,7 +5,6 @@ from enum import Enum
 import numpy as np
 from scipy.stats import norm
 import matplotlib.pyplot as plt
-import logging
 from joblib import Parallel, delayed
 from tqdm.auto import tqdm
 
@@ -257,7 +256,7 @@ class Synth:
                         upper,
                         alpha=0.2,
                         color="blue",
-                        label=f"{int((1-alpha)*100)}% CI",
+                        label=f"{int((1 - alpha) * 100)}% CI",
                     )
 
             title = (
@@ -353,13 +352,15 @@ class Synth:
             # Convert to treatment matrix
             Y, W, N_treated = convert_to_W(Y_treated, Y_control, T_pre)
             # Fit matrix completion model
-            lambda_param = self.reg_param if self.reg_param is not None else 1e1
+            lambda_param = self.reg_param if self.reg_param is not None else 1e1  # noqa
             mcnnm = MatrixCompletionEstimator(
                 max_iter=self.max_iterations,
                 tol=1e-8,
                 verbose=verbose,
             )
-            completed_matrix = mcnnm.fit(Y, 1.0 - W, self.unit_intercept, self.time_intercept)
+            completed_matrix = mcnnm.fit(
+                Y, 1.0 - W, self.unit_intercept, self.time_intercept
+            )
             weights = None
             synthetic = completed_matrix[:N_treated].squeeze()
         else:
@@ -461,7 +462,7 @@ class Synth:
         n = Y.shape[0]
         if (n - 1) <= 20:
             print(
-                f"You have {n} units, so the lowest possible p-value is {1/(n-1)}, which is smaller than traditional α of 0.05 \nPermutation test may be unreliable"
+                f"You have {n} units, so the lowest possible p-value is {1 / (n - 1)}, which is smaller than traditional α of 0.05 \nPermutation test may be unreliable"
             )
 
         # Get control units and compute placebo effects
