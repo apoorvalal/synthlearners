@@ -3,18 +3,18 @@ import pytest
 from synthlearners.crossvalidation import PanelCrossValidator, cross_validate
 
 @pytest.fixture
-def test_horizontal_split():
-    """Test that horizontal splits have the correct shape and properties."""
+def test_vertical_split():
+    """Test that vertical splits have the correct shape and properties."""
     cv = PanelCrossValidator(n_splits=5)
     X = np.random.randn(10, 20)  # 10 units, 20 time periods
     
-    masks = cv.horizontal_split(X)
+    masks = cv.vertical_split(X)
     
     # Check we get correct number of folds
     assert len(masks) == 5
     
     for i, (train_mask, test_mask) in enumerate(masks):
-        print(f"\nHorizontal Fold {i}:")
+        print(f"\n Vertical Fold {i}:")
         print("Train mask column sums:", train_mask.sum(axis=0))
         print("Test mask column sums:", test_mask.sum(axis=0))
 
@@ -37,18 +37,18 @@ def test_horizontal_split():
         assert np.all((test_row_sums == 0) | (test_row_sums == X.shape[0]))
 
 
-def test_vertical_split():
-    """Test that vertical splits have the correct shape and properties."""
+def test_horizontal_split():
+    """Test that horizontal splits have the correct shape and properties."""
     cv = PanelCrossValidator(n_splits=5)
     X = np.random.randn(10, 20)
     
-    masks = cv.vertical_split(X)
+    masks = cv.horizontal_split(X)
     
     # Number of folds limited by min_train_size constraint
     assert len(masks) <= 5
     
     for i, (train_mask, test_mask) in enumerate(masks):
-        print(f"\nVertical Fold {i}:")
+        print(f"\n Horizontal Fold {i}:")
         print("Train mask column sums:", train_mask.sum(axis=0))
         print("Test mask column sums:", test_mask.sum(axis=0))
     
@@ -155,16 +155,15 @@ def test_cross_validate():
     cv = PanelCrossValidator(n_splits=3, n_jobs=1, cv_ratio=0.8, random_state=42)
     estimator = MockEstimator()
     
-    # Test horizontal split
-    horizontal_scores = cross_validate(estimator, X, cv, split_type='horizontal')
-    assert len(horizontal_scores) == 3
-    assert all(isinstance(score, (int, float, np.number)) for score in horizontal_scores)
-    
     # Test vertical split
     vertical_scores = cross_validate(estimator, X, cv, split_type='vertical')
-    print("Vertical scores:", vertical_scores)
-    assert len(vertical_scores) <= 3  # Limited by min_train_size
+    assert len(vertical_scores) == 3
     assert all(isinstance(score, (int, float, np.number)) for score in vertical_scores)
+    
+    # Test horizontal split
+    horizontal_scores = cross_validate(estimator, X, cv, split_type='horizontal')
+    assert len(horizontal_scores) <= 3  # Limited by min_train_size
+    assert all(isinstance(score, (int, float, np.number)) for score in horizontal_scores)
 
     # Test box split
     box_scores = cross_validate(estimator, X, cv, split_type='box')
@@ -183,7 +182,7 @@ def test_cross_validate():
         estimator, 
         X, 
         cv,
-        split_type='horizontal',
+        split_type='vertical',
         fit_method='fit',
         fit_args={'extra_arg': 42}
     )

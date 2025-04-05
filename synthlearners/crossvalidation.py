@@ -8,9 +8,9 @@ from .utils import tqdm_joblib
 
 class PanelCrossValidator:
     """
-    A class implementing horizontal and vertical cross validation for panel data.
-    Horizontal CV splits along rows (units/individuals)
-    Vertical CV splits along columns (time periods) using forward-chaining validation
+    A class implementing vertical and horizontal cross validation for panel data.
+    Vertical CV splits along rows (units/individuals)
+    Horizontal CV splits along columns (time periods) using forward-chaining validation
 
     Credit: Written with assistance from Claude Copilot
     """
@@ -53,10 +53,6 @@ class PanelCrossValidator:
             Number of rows in the test mask, must be <= N
         T_prime : int
             Number of columns in the test mask, must be <= T
-        n_splits : int, default=5
-            Number of folds for cross-validation
-        random_state : int, default=None
-            Random seed for reproducibility
         specified_rows : array-like, default=None
             Indices of specific rows that must be included in the test set.
             If provided, N_prime should be >= len(specified_rows)
@@ -149,9 +145,9 @@ class PanelCrossValidator:
         
         return masks
 
-    def horizontal_split(self, X: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray]]:
+    def vertical_split(self, X: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray]]:
         """
-        Perform horizontal cross validation (splitting along rows).
+        Perform vertical cross validation (splitting along rows).
 
         Args:
             X: Input matrix of shape (n_units, n_times)
@@ -164,11 +160,11 @@ class PanelCrossValidator:
         masks = self.box_split(X=X, T_prime=n_times)
         return masks
 
-    def vertical_split(
+    def horizontal_split(
         self, X: np.ndarray, min_train_size: Optional[int] = None
     ) -> List[Tuple[np.ndarray, np.ndarray]]:
         """
-        Perform vertical cross validation using forward-chaining validation.
+        Perform horizontal cross validation using forward-chaining validation.
 
         Args:
             X: Input matrix of shape (n_units, n_times)
@@ -242,10 +238,10 @@ class PanelCrossValidator:
                 "Invalid split_type. Expected one of ['horizontal', 'vertical','box', 'random']"
             )
 
-        if split_type == "horizontal":
-            return self.horizontal_split(X)
-        elif split_type == "vertical":
-            return self.vertical_split(X, min_train_size=min_train_size)
+        if split_type == "vertical":
+            return self.vertical_split(X)
+        elif split_type == "horizontal":
+            return self.horizontal_split(X, min_train_size=min_train_size)
         elif split_type == "box":
             return self.box_split(X)
         else:
@@ -256,7 +252,7 @@ def cross_validate(
     estimator,
     X: np.ndarray,
     cv: PanelCrossValidator,
-    split_type: str = "horizontal",
+    split_type: str = "vertical",
     fit_method: str = "fit",
     fit_args: dict = None,
 ):
