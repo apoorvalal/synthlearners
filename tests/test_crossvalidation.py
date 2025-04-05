@@ -13,7 +13,11 @@ def test_horizontal_split():
     # Check we get correct number of folds
     assert len(masks) == 5
     
-    for train_mask, test_mask in masks:
+    for i, (train_mask, test_mask) in enumerate(masks):
+        print(f"\nHorizontal Fold {i}:")
+        print("Train mask column sums:", train_mask.sum(axis=0))
+        print("Test mask column sums:", test_mask.sum(axis=0))
+
         # Check mask shapes
         assert train_mask.shape == X.shape
         assert test_mask.shape == X.shape
@@ -43,13 +47,11 @@ def test_vertical_split():
     # Number of folds limited by min_train_size constraint
     assert len(masks) <= 5
     
-    # Debug prints
     for i, (train_mask, test_mask) in enumerate(masks):
-        print(f"\nFold {i}:")
+        print(f"\nVertical Fold {i}:")
         print("Train mask column sums:", train_mask.sum(axis=0))
         print("Test mask column sums:", test_mask.sum(axis=0))
     
-    for train_mask, test_mask in masks:
         # Check mask shapes
         assert train_mask.shape == X.shape
         assert test_mask.shape == X.shape
@@ -79,7 +81,11 @@ def test_random_split():
     # Check we get correct number of folds
     assert len(masks) == 5
     
-    for train_mask, test_mask in masks:
+    for i, (train_mask, test_mask) in enumerate(masks):
+        print(f"\nRandom Fold {i}:")
+        print("Train mask column sums:", train_mask.sum(axis=0))
+        print("Test mask column sums:", test_mask.sum(axis=0))
+
         # Check mask shapes  
         assert train_mask.shape == X.shape
         assert test_mask.shape == X.shape
@@ -94,6 +100,38 @@ def test_random_split():
         # Check that expected number of elements are masked
         n_test = int(X.size / 5)
         assert abs(test_mask.sum() - n_test) <= 1
+
+def test_box_split():
+    """Test that box splits have the correct shape and properties."""
+
+    cv = PanelCrossValidator(n_splits=5, random_state=42)
+    X = np.random.randn(10, 20)
+    
+    masks = cv.box_split(X)
+    
+    # Check we get correct number of folds
+    assert len(masks) == 5
+    
+    for i, (train_mask, test_mask) in enumerate(masks):
+        print(f"\nBox Fold {i}:")
+        print("Train mask column sums:", train_mask.sum(axis=0))
+        print("Test mask column sums:", test_mask.sum(axis=0))
+
+        # Check mask shapes  
+        assert train_mask.shape == X.shape
+        assert test_mask.shape == X.shape
+        
+        # Check masks are boolean
+        assert train_mask.dtype == bool
+        assert test_mask.dtype == bool
+        
+        # Check masks are mutually exclusive
+        assert not np.any(train_mask & test_mask)
+        
+        # Check that expected number of elements are masked
+        expected_n = int((1-cv.cv_ratio) * X.shape[0])
+        expected_t = int((1-cv.cv_ratio) * X.shape[1])
+        assert abs(test_mask.sum() - expected_n * expected_t) <= 1
 
 def test_split_type_validation():
     """Test that invalid split types raise appropriate errors."""
@@ -124,11 +162,19 @@ def test_cross_validate():
     
     # Test vertical split
     vertical_scores = cross_validate(estimator, X, cv, split_type='vertical')
+    print("Vertical scores:", vertical_scores)
     assert len(vertical_scores) <= 3  # Limited by min_train_size
     assert all(isinstance(score, (int, float, np.number)) for score in vertical_scores)
+
+    # Test box split
+    box_scores = cross_validate(estimator, X, cv, split_type='box')
+    print("Box scores:", box_scores)
+    assert len(box_scores) <= 3  # Limited by min_train_size
+    assert all(isinstance(score, (int, float, np.number)) for score in box_scores)
     
     # Test random split
     random_scores = cross_validate(estimator, X, cv, split_type='random')
+    print("Random scores:", random_scores)
     assert len(random_scores) == 3
     assert all(isinstance(score, (int, float, np.number)) for score in random_scores)
     
