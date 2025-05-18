@@ -27,3 +27,4 @@
 *.out
 *.synctex.gz
 notebooks/*.py
+.aider.*
