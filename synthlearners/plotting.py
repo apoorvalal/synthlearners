@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Optional, Union, Tuple
-from .synth import Synth, SynthResults
+from .synth import SynthResults
 
 
 class SynthPlotter:
@@ -318,9 +318,6 @@ def plot_simulation_results(
         Figure and Axes objects
     """
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=figsize)
-
-    # Plot average treatment effects
-    plotter = SynthPlotter()
 
     # Average across simulations
     avg_effects = {}

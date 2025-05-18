@@ -26,6 +26,7 @@ dependencies = [
     "matplotlib",
     "seaborn",
     "faiss-cpu",
+    "scikit-learn",
     "joblib"
 ]
 
