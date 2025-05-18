@@ -28,7 +28,7 @@ features are indicated by
     - [ ] entropy weights ([Hainmueller 2012](https://www.cambridge.org/core/journals/political-analysis/article/entropy-balancing-for-causal-effects-a-multivariate-reweighting-method-to-produce-balanced-samples-in-observational-studies/220E4FC838066552B53128E647E4FAA7), [Hirschberg and Arkhangelsky 2023](https://arxiv.org/abs/2311.13575), [Lal 2023](https://apoorvalal.github.io/files/papers/augbal.pdf))
   - [x] with multiple treated units, match aggregate outcomes (default) or individual outcomes ([Abadie and L'Hour 2021](https://economics.mit.edu/sites/default/files/publications/A%20Penalized%20Synthetic%20Control%20Estimator%20for%20Disagg.pdf))
   - [ ] time weights
-    - [ ] L2 weights (Arkhangelsky et al 2021)
+    - [x] L2 weights (Arkhangelsky et al 2021)
     - [ ] time-distance penalised weights (Imbens et al 2024)
   - [ ] augmenting weights with outcome models ([Ben-Michael et al 2021](https://arxiv.org/abs/1811.04170))
     - [x] matrix completion ([Athey et al 2021](https://arxiv.org/abs/1710.10251))

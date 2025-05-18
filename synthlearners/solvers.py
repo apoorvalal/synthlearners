@@ -185,3 +185,100 @@ def _solve_matching(
     weights[indices[0]] = 1.0 / k
 
     return weights
+
+
+######################################################################
+
+
+def _solve_sdid_time_weights(
+    Y_control_pre: np.ndarray,
+    Y_control_post_avg: np.ndarray,
+    regularization_strength: float,
+    simplex_constraint: bool,
+    num_pre_periods: int,
+) -> np.ndarray:
+    """
+    Solve for time weights (lambda) for Synthetic Difference-in-Differences.
+
+    Minimizes:
+        sum_j (Y_control_post_avg_j - Y_control_pre_j @ lambda)^2
+        + regularization_strength * ||lambda - 1/T_pre||^2_2
+    Subject to simplex constraints if specified.
+
+    Args:
+        Y_control_pre: Control unit outcomes in pre-treatment (N_control x T_pre)
+        Y_control_post_avg: Average post-treatment outcome for control units (N_control,)
+        regularization_strength: Zeta_lambda, penalty on deviation from uniform weights.
+        simplex_constraint: If True, enforce lambda_t >= 0 and sum(lambda_t) = 1.
+        num_pre_periods: T_pre, number of pre-treatment periods.
+
+    Returns:
+        lambda_hat: Optimal time weights (T_pre,)
+    """
+    T_pre = num_pre_periods
+    initial_lambda = np.ones(T_pre) / T_pre
+
+    def objective_fn(lambda_weights: np.ndarray) -> float:
+        term1 = np.sum((Y_control_post_avg - np.dot(Y_control_pre, lambda_weights)) ** 2)
+        term2 = regularization_strength * np.sum((lambda_weights - (1 / T_pre)) ** 2)
+        return term1 + term2
+
+    # Gradient (optional, but can help SLSQP)
+    # d_obj/d_lambda_k = -2 * sum_j (Y_j_post_avg - Y_j_pre @ lambda) * Y_jk_pre
+    #                  + 2 * reg_strength * (lambda_k - 1/T_pre)
+    def gradient_fn(lambda_weights: np.ndarray) -> np.ndarray:
+        residuals = Y_control_post_avg - np.dot(Y_control_pre, lambda_weights)
+        grad_term1 = -2 * np.dot(residuals, Y_control_pre)
+        grad_term2 = 2 * regularization_strength * (lambda_weights - (1/T_pre))
+        return grad_term1 + grad_term2
+
+
+    if simplex_constraint:
+        bounds = tuple((0, None) for _ in range(T_pre))
+        constraints = [{"type": "eq", "fun": lambda x: np.sum(x) - 1}]
+        # Using SLSQP from scipy.optimize
+        # For some reason, fmin_slsqp is already imported but minimize is more standard
+        from scipy.optimize import minimize
+        result = minimize(
+            objective_fn,
+            initial_lambda,
+            method="SLSQP",
+            jac=gradient_fn, # Providing gradient
+            bounds=bounds,
+            constraints=constraints,
+            tol=1e-8 # A reasonable tolerance
+        )
+        if not result.success:
+            # Fallback or warning if SLSQP fails
+            logging.warning(f"SLSQP for time weights did not converge: {result.message}")
+            # Could fall back to a simple ridge if simplex fails badly, or just return best effort
+        return result.x
+    else:
+        # Standard ridge regression: (X'X + zeta*I) lambda = X'y_post + zeta * uniform_lambda_coeffs
+        # where X is Y_control_pre, y_post is Y_control_post_avg
+        # and I is adjusted for the (lambda - 1/T_pre)^2 penalty form.
+        # Let lambda_tilde = lambda - 1/T_pre. Then lambda = lambda_tilde + 1/T_pre.
+        # Objective: (y - X(lambda_tilde + 1/T_pre))^2 + zeta * lambda_tilde^2
+        # ( (y - X * 1/T_pre) - X * lambda_tilde )^2 + zeta * lambda_tilde^2
+        # Let y_adj = y - X * 1/T_pre.
+        # Solve (X'X + zeta*I)lambda_tilde = X'y_adj for lambda_tilde
+        # Then lambda = lambda_tilde + 1/T_pre
+        
+        # Simpler: directly solve for lambda using the objective's gradient set to zero
+        # X'X lambda - X'y + zeta * (lambda - 1/T_pre) = 0
+        # (X'X + zeta*I) lambda = X'y + zeta * 1/T_pre
+        # where X is Y_control_pre, y is Y_control_post_avg
+        XtX = np.dot(Y_control_pre.T, Y_control_pre)
+        Xty = np.dot(Y_control_pre.T, Y_control_post_avg)
+        
+        # Add regularization term to the diagonal of XtX for the lambda part
+        # and adjust the RHS for the (lambda - 1/T_pre) part of the penalty
+        lhs = XtX + regularization_strength * np.eye(T_pre)
+        rhs = Xty + regularization_strength * (np.ones(T_pre) / T_pre)
+        
+        try:
+            lambda_hat = np.linalg.solve(lhs, rhs)
+        except np.linalg.LinAlgError:
+            logging.warning("Singular matrix in time weight ridge regression. Using pseudo-inverse.")
+            lambda_hat = np.linalg.lstsq(lhs, rhs, rcond=None)[0]
+        return lambda_hat

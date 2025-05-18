@@ -16,6 +16,7 @@ from .solvers import (
     _solve_simplex,
     _solve_matching,
     _choose_lambda,
+    _solve_sdid_time_weights,  # To be added in solvers.py
 )
 from .mcnnm import MatrixCompletionEstimator
 
@@ -46,6 +47,7 @@ class SynthResults:
     time_intercept: bool
     p: Optional[float] = None
     reg_param: Optional[float] = None
+    time_weights_pre_treatment: Optional[np.ndarray] = None
     jackknife_effects: Optional[np.ndarray] = None
     permutation_p_value: Optional[float] = None
 
@@ -90,6 +92,9 @@ class Synth:
         k_nn: int = 5,
         unit_intercept: bool = False,
         time_intercept: bool = False,
+        enable_time_weights: bool = False,
+        time_weight_regularization: float = 0.1,
+        time_weights_simplex: bool = True,
     ):
         """Initialize synthetic control estimator."""
         self.method = SynthMethod(method) if isinstance(method, str) else method
@@ -104,6 +109,9 @@ class Synth:
         self.k_nn = k_nn
         self.unit_intercept = unit_intercept
         self.time_intercept = time_intercept
+        self.enable_time_weights = enable_time_weights
+        self.time_weight_regularization = time_weight_regularization
+        self.time_weights_simplex = time_weights_simplex
 
         # Internal state
         self.unit_weights = None
@@ -171,14 +179,48 @@ class Synth:
                 Y_treated, Y_control, T_pre, verbose
             )
 
-        # Calculate fit and effects
+        # Calculate pre-treatment RMSE (based on unit weights only)
         pre_rmse = np.sqrt(
             np.mean((Y_treated[:T_pre] - synthetic_outcome[:T_pre]) ** 2)
         )
 
+        # Initialize time weights
+        time_weights_pre_treatment = None
+
+        # Calculate post-treatment effect
+        # Default calculation (no time weights)
+        post_treatment_effect = np.mean(
+            Y_treated[T_pre : T_pre + T_post]
+            - synthetic_outcome[T_pre : T_pre + T_post]
+        )
+
+        if self.enable_time_weights and self.method != SynthMethod.MATRIX_COMPLETION:
+            Y_control_pre = Y_control[:, :T_pre]
+            # Average post-treatment outcomes for each control unit
+            Y_control_post_avg = Y_control[:, T_pre : T_pre + T_post].mean(axis=1)
+            Y_treated_pre_vec = Y_treated[:T_pre]
+            Y_treated_post_avg = Y_treated[T_pre : T_pre + T_post].mean()
+
+            time_weights_pre_treatment = _solve_sdid_time_weights(
+                Y_control_pre,
+                Y_control_post_avg,
+                regularization_strength=self.time_weight_regularization,
+                simplex_constraint=self.time_weights_simplex,
+                num_pre_periods=T_pre,
+            )
+
+            # SDID ATT calculation
+            term1 = Y_treated_post_avg - np.dot(Y_treated_pre_vec, time_weights_pre_treatment)
+            term2_control_effect = Y_control_post_avg - np.dot(Y_control_pre, time_weights_pre_treatment)
+            term2 = np.dot(term2_control_effect, self.unit_weights)
+            post_treatment_effect = term1 - term2
+        elif self.enable_time_weights and self.method == SynthMethod.MATRIX_COMPLETION:
+            logging.warning("Time weights are not applicable to Matrix Completion method. Ignoring.")
+
+
         # Compute inference if requested
         jackknife_effects = (
-            self._compute_jackknife_effects(Y, treated_units, T_pre)
+            self._compute_jackknife_effects(Y, treated_units, T_pre) # TODO: Jackknife might need adjustment for SDID
             if compute_jackknife
             else None
         )
@@ -192,16 +234,14 @@ class Synth:
             unit_weights=self.unit_weights,
             treated_outcome=Y_treated,
             synthetic_outcome=synthetic_outcome,
-            post_treatment_effect=np.mean(
-                Y_treated[T_pre : T_pre + T_post]
-                - synthetic_outcome[T_pre : T_pre + T_post]
-            ),
+            post_treatment_effect=post_treatment_effect,
             pre_treatment_rmse=pre_rmse,
             method=self.method,
             unit_intercept=self.unit_intercept,
             time_intercept=self.time_intercept,
             p=self.p if self.method == SynthMethod.LP_NORM else None,
             reg_param=self.reg_param if self.method == SynthMethod.LP_NORM else None,
+            time_weights_pre_treatment=time_weights_pre_treatment,
             jackknife_effects=jackknife_effects,
             permutation_p_value=permutation_p_value,
         )
