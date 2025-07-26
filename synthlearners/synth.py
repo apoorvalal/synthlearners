@@ -15,7 +15,7 @@ from .solvers import (
     _solve_simplex,
     _solve_matching,
     _choose_lambda,
-    _solve_sdid_time_weights,  # To be added in solvers.py
+    _solve_sdid_matrix,
 )
 from .mcnnm import MatrixCompletionEstimator
 
@@ -30,6 +30,7 @@ class SynthMethod(Enum):
     SIMPLEX = "simplex"
     MATCHING = "matching"
     MATRIX_COMPLETION = "matrix_completion"
+    SDID = "sdid"
 
 
 @dataclass
@@ -91,9 +92,8 @@ class Synth:
         k_nn: int = 5,
         unit_intercept: bool = False,
         time_intercept: bool = False,
-        enable_time_weights: bool = False,
-        time_weight_regularization: float = 0.1,
-        time_weights_simplex: bool = True,
+        zeta_omega: Optional[float] = None,
+        zeta_lambda: float = 1e-6,
     ):
         """Initialize synthetic control estimator."""
         self.method = SynthMethod(method) if isinstance(method, str) else method
@@ -108,9 +108,8 @@ class Synth:
         self.k_nn = k_nn
         self.unit_intercept = unit_intercept
         self.time_intercept = time_intercept
-        self.enable_time_weights = enable_time_weights
-        self.time_weight_regularization = time_weight_regularization
-        self.time_weights_simplex = time_weights_simplex
+        self.zeta_omega = zeta_omega
+        self.zeta_lambda = zeta_lambda
 
         # Internal state
         self.unit_weights = None
@@ -154,6 +153,17 @@ class Synth:
         if self.weight_type != "unit":
             raise NotImplementedError("Only 'unit' weights are currently supported.")
 
+        # Use matrix-based SDID for method="sdid"
+        if self.method == SynthMethod.SDID:
+            return self._fit_matrix_sdid(
+                Y,
+                treated_units,
+                T_pre,
+                compute_jackknife,
+                compute_permutation,
+                verbose,
+            )
+
         if self.granular_weights:
             # Handle individual unit matching
             individual_weights = []
@@ -183,43 +193,20 @@ class Synth:
             np.mean((Y_treated[:T_pre] - synthetic_outcome[:T_pre]) ** 2)
         )
 
-        # Initialize time weights
-        time_weights_pre_treatment = None
-
-        # Calculate post-treatment effect
-        # Default calculation (no time weights)
+        # Calculate post-treatment effect (simple average for non-SDID methods)
         post_treatment_effect = np.mean(
             Y_treated[T_pre : T_pre + T_post]
             - synthetic_outcome[T_pre : T_pre + T_post]
         )
 
-        if self.enable_time_weights and self.method != SynthMethod.MATRIX_COMPLETION:
-            Y_control_pre = Y_control[:, :T_pre]
-            # Average post-treatment outcomes for each control unit
-            Y_control_post_avg = Y_control[:, T_pre : T_pre + T_post].mean(axis=1)
-            Y_treated_pre_vec = Y_treated[:T_pre]
-            Y_treated_post_avg = Y_treated[T_pre : T_pre + T_post].mean()
-
-            time_weights_pre_treatment = _solve_sdid_time_weights(
-                Y_control_pre,
-                Y_control_post_avg,
-                regularization_strength=self.time_weight_regularization,
-                simplex_constraint=self.time_weights_simplex,
-                num_pre_periods=T_pre,
-            )
-
-            # SDID ATT calculation
-            term1 = Y_treated_post_avg - np.dot(Y_treated_pre_vec, time_weights_pre_treatment)
-            term2_control_effect = Y_control_post_avg - np.dot(Y_control_pre, time_weights_pre_treatment)
-            term2 = np.dot(term2_control_effect, self.unit_weights)
-            post_treatment_effect = term1 - term2
-        elif self.enable_time_weights and self.method == SynthMethod.MATRIX_COMPLETION:
-            logging.warning("Time weights are not applicable to Matrix Completion method. Ignoring.")
-
+        # No time weights for traditional methods
+        time_weights_pre_treatment = None
 
         # Compute inference if requested
         jackknife_effects = (
-            self._compute_jackknife_effects(Y, treated_units, T_pre) # TODO: Jackknife might need adjustment for SDID
+            self._compute_jackknife_effects(
+                Y, treated_units, T_pre
+            )  # TODO: Jackknife might need adjustment for SDID
             if compute_jackknife
             else None
         )
@@ -518,3 +505,72 @@ class Synth:
             )
 
         return np.mean(np.abs(placebo_effects) >= true_effect)
+
+    def _fit_matrix_sdid(
+        self,
+        Y: np.ndarray,
+        treated_units: np.ndarray,
+        T_pre: int,
+        compute_jackknife: bool = False,
+        compute_permutation: bool = False,
+        verbose: bool = False,
+    ) -> SynthResults:
+        """Fit SDID using matrix formulation from original paper."""
+        # Solve SDID using matrix approach
+        omega_weights, lambda_weights, sdid_estimate = _solve_sdid_matrix(
+            Y,
+            treated_units,
+            T_pre,
+            zeta_omega=self.zeta_omega,
+            zeta_lambda=self.zeta_lambda,
+        )
+
+        # Store weights for compatibility
+        self.unit_weights = omega_weights
+        self.time_weights = lambda_weights
+
+        # Create synthetic outcomes for visualization
+        # For matrix SDID, we need to construct these differently
+        Y_treated = Y[treated_units].mean(axis=0)
+
+        # Compute synthetic using traditional approach for visualization
+        control_units = np.setdiff1d(range(Y.shape[0]), treated_units)
+        Y_control = Y[control_units, :]
+
+        # Simple unit-weighted synthetic for visualization
+        synthetic_outcome = omega_weights @ Y_control
+
+        # Calculate pre-treatment RMSE
+        pre_rmse = np.sqrt(
+            np.mean((Y_treated[:T_pre] - synthetic_outcome[:T_pre]) ** 2)
+        )
+
+        # The post-treatment effect is directly from SDID
+        post_treatment_effect = float(sdid_estimate)
+
+        # Compute inference if requested (simplified for now)
+        jackknife_effects = None
+        if compute_jackknife:
+            if verbose:
+                print("Warning: Jackknife not yet implemented for matrix SDID")
+
+        permutation_p_value = None
+        if compute_permutation:
+            if verbose:
+                print("Warning: Permutation test not yet implemented for matrix SDID")
+
+        return SynthResults(
+            unit_weights=omega_weights,
+            treated_outcome=Y_treated,
+            synthetic_outcome=synthetic_outcome,
+            post_treatment_effect=post_treatment_effect,
+            pre_treatment_rmse=pre_rmse,
+            method=self.method,
+            unit_intercept=True,  # Matrix SDID always uses intercepts
+            time_intercept=True,
+            p=self.p if self.method == SynthMethod.LP_NORM else None,
+            reg_param=self.zeta_omega,
+            time_weights_pre_treatment=lambda_weights,
+            jackknife_effects=jackknife_effects,
+            permutation_p_value=permutation_p_value,
+        )

@@ -8,7 +8,7 @@ python_files = "test_*.py"
 
 [project]
 name = "synthlearners"
-version = "0.1.0"
+version = "0.1.1"
 authors = [{ name = "Apoorva Lal", email = "lal.apoorva@gmail.com" }]
 description = "Fast, scalable synthetic control methods for panel data"
 readme = "README.md"
@@ -27,7 +27,9 @@ dependencies = [
     "seaborn",
     "faiss-cpu",
     "scikit-learn",
-    "joblib"
+    "joblib",
+    "tqdm",
+    "ipywidgets",
 ]
 
 [project.urls]
