@@ -1,16 +1,7 @@
 # `synthlearners`: Scalable Synthetic Control Methods in Python
 
-synthetic control methods powered by the [`pyensmallen`](https://github.com/apoorvalal/pyensmallen) library for fast optimisation.
+fast, scalable synthetic control methods. Full version powered by the [`pyensmallen`](https://github.com/apoorvalal/pyensmallen) library for fast optimisation, and lean version powered by [`adelie`](https://github.com/JamesYang007/adelie) for blazing fast regression solvers.
 Check out the `notebooks` directory for synthetic and real data examples.
-
-
-## installation
-
-```
-pip install git+https://github.com/apoorvalal/synthlearners/
-```
-
-or git clone and run `uv pip install -e .` and make changes.
 
 ## features
 
@@ -27,7 +18,7 @@ features are indicated by
     - [x] support intercept term ([Ferman and Pinto 2021](https://onlinelibrary.wiley.com/doi/abs/10.3982/QE1596), Doudchenko and Imbens)
     - [ ] entropy weights ([Hainmueller 2012](https://www.cambridge.org/core/journals/political-analysis/article/entropy-balancing-for-causal-effects-a-multivariate-reweighting-method-to-produce-balanced-samples-in-observational-studies/220E4FC838066552B53128E647E4FAA7), [Hirschberg and Arkhangelsky 2023](https://arxiv.org/abs/2311.13575), [Lal 2023](https://apoorvalal.github.io/files/papers/augbal.pdf))
   - [x] with multiple treated units, match aggregate outcomes (default) or individual outcomes ([Abadie and L'Hour 2021](https://economics.mit.edu/sites/default/files/publications/A%20Penalized%20Synthetic%20Control%20Estimator%20for%20Disagg.pdf))
-  - [ ] time weights
+  - [x] time weights
     - [x] L2 weights (Arkhangelsky et al 2021)
     - [ ] time-distance penalised weights (Imbens et al 2024)
   - [ ] augmenting weights with outcome models ([Ben-Michael et al 2021](https://arxiv.org/abs/1811.04170))
@@ -46,5 +37,79 @@ features are indicated by
   - [x] weight distributions
 
 
-
 Contributions welcome!
+
+## installation
+
+```
+pip install git+https://github.com/apoorvalal/synthlearners/
+```
+
+or git clone and run `uv pip install -e .` and make changes.
+
+
+### Lean Installation (Recommended)
+
+For fast, regularized synthetic control methods using adelie:
+
+```bash
+pip install synthlearners
+```
+
+This installs only the core dependencies:
+- `numpy`, `pandas`, `matplotlib` - Basic data handling and plotting
+- `adelie` - Blazing fast regularized regression solver
+
+**Available methods:**
+- `PenguinSynth` - L1/L2 regularized synthetic control and SDID
+- All traditional CVX implementations (`adelie_synth`, `synthetic_control`, `synthetic_diff_in_diff`, etc.)
+
+## Full Installation
+
+For all methods including traditional constrained optimization and matching:
+
+```bash
+pip install synthlearners[full]
+```
+
+Additional dependencies:
+- `scipy`, `scikit-learn` - Optimization and cross-validation
+- `pyensmallen` - Frank-Wolfe optimization
+- `faiss-cpu` - Fast nearest neighbor search
+- `joblib`, `tqdm` - Parallelization and progress bars
+- `seaborn`, `ipywidgets` - Enhanced plotting and notebook widgets
+
+**Additional methods:**
+- `Synth` - Traditional synthetic control with various solvers
+- `MatrixCompletionEstimator` - Matrix completion methods
+- Advanced cross-validation and inference tools
+
+## Quick Start
+
+### Lean Installation
+```python
+from synthlearners import PenguinSynth
+
+# Ridge regularized synthetic control
+estimator = PenguinSynth(method="synth", l1_ratio=0.0)
+result = estimator.fit(df, "unit", "time", "treat", "outcome")
+print(f"Treatment effect: {result.att:.3f}")
+```
+
+### Full Installation
+```python
+from synthlearners import Synth, PenguinSynth
+
+# Traditional simplex-constrained synthetic control
+synth = Synth(method="simplex")
+result = synth.fit(Y, treated_units=15, T_pre=10)
+
+# Or use the fast regularized version
+penguin = PenguinSynth(method="synth", l1_ratio=0.5)
+result = penguin.fit(df, "unit", "time", "treat", "outcome")
+```
+
+## Performance Comparison
+
+**PenguinSynth (adelie)**: ~100x faster, no convergence issues, flexible regularization
+**Traditional Synth**: Full inference support, established methodology, more solvers

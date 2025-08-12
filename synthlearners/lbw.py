@@ -1,11 +1,10 @@
 import numpy as np
 import pandas as pd
 
-import cvxpy as cp
 import adelie as ad
-from typing import Dict, Tuple
+from typing import Dict
 from dataclasses import dataclass
-from typing import Optional, Union, Literal
+from typing import Optional, Literal
 import matplotlib.pyplot as plt
 
 
@@ -226,7 +225,6 @@ class PenguinSynth:
         # Reshape data using existing panel_matrices function
         matrices = panel_matrices(df, unit_id, time_id, treat, outcome)
         Y = matrices["Y"]
-        W = matrices["W"]
         N0 = matrices["N0"]
         T0 = matrices["T0"]
 
@@ -380,7 +378,6 @@ class PenguinSynth:
         """Fit difference-in-differences (uniform weights)."""
         # Standard DiD with uniform weights
         N, T = Y.shape
-        N1, T1 = N - N0, T - T0
 
         # Uniform weights
         unit_weights = np.ones(N0) / N0

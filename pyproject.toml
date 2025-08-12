@@ -20,18 +20,9 @@ classifiers = [
 ]
 dependencies = [
     "numpy",
-    "scipy",
-    "pyensmallen",
     "pandas",
     "matplotlib",
-    "seaborn",
-    "faiss-cpu",
-    "scikit-learn",
-    "joblib",
-    "tqdm",
-    "ipywidgets",
     "adelie",
-    "cvxpy",
 ]
 
 [project.urls]
@@ -40,6 +31,16 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=7.0"]
+full = [
+    "scipy",
+    "pyensmallen",
+    "seaborn",
+    "faiss-cpu",
+    "scikit-learn",
+    "joblib",
+    "tqdm",
+    "ipywidgets",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["synthlearners"]

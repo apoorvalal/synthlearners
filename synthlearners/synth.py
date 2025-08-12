@@ -3,21 +3,33 @@ from typing import Optional, Union, Tuple, Literal
 from enum import Enum
 
 import numpy as np
-from scipy.stats import norm
 import matplotlib.pyplot as plt
-from joblib import Parallel, delayed
-from tqdm.auto import tqdm
 
-from .utils import tqdm_joblib, convert_to_W
-from .solvers import (
-    _solve_lp_norm,
-    _solve_linear,
-    _solve_simplex,
-    _solve_matching,
-    _choose_lambda,
-    _solve_sdid_matrix,
-)
-from .mcnnm import MatrixCompletionEstimator
+# Optional heavy dependencies for full installation
+try:
+    from scipy.stats import norm
+    from joblib import Parallel, delayed
+    from tqdm.auto import tqdm
+    from .utils import tqdm_joblib, convert_to_W
+    from .solvers import (
+        _solve_lp_norm,
+        _solve_linear,
+        _solve_simplex,
+        _solve_matching,
+        _choose_lambda,
+        _solve_sdid_matrix,
+    )
+    from .mcnnm import MatrixCompletionEstimator
+    HAS_FULL_DEPENDENCIES = True
+except ImportError as e:
+    HAS_FULL_DEPENDENCIES = False
+    _missing_dep = str(e).split("'")[1] if "'" in str(e) else "unknown"
+    
+    def _raise_missing_dependency():
+        raise ImportError(
+            f"This feature requires the full installation. "
+            f"Install with: pip install synthlearners[full]"
+        )
 
 ######################################################################
 
@@ -96,6 +108,8 @@ class Synth:
         zeta_lambda: float = 1e-6,
     ):
         """Initialize synthetic control estimator."""
+        if not HAS_FULL_DEPENDENCIES:
+            _raise_missing_dependency()
         self.method = SynthMethod(method) if isinstance(method, str) else method
         self.p = p
         self.max_iterations = max_iterations
