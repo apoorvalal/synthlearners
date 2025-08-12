@@ -30,6 +30,8 @@ dependencies = [
     "joblib",
     "tqdm",
     "ipywidgets",
+    "adelie",
+    "cvxpy",
 ]
 
 [project.urls]
