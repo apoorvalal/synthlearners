@@ -27,3 +27,5 @@
 *.out
 *.synctex.gz
 notebooks/*.py
+.aider.*
+.claude/settings.local.json
