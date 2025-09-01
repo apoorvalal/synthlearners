@@ -72,6 +72,14 @@ For all methods including traditional constrained optimization and matching:
 pip install synthlearners[full]
 ```
 
+For development, you would want to navigate to the repo location, and then run 
+
+```
+uv pip install -e ".[full]"
+```
+
+which tells uv to install in editable mode with `full` optional dependencies.
+
 Additional dependencies:
 - `scipy`, `scikit-learn` - Optimization and cross-validation
 - `pyensmallen` - Frank-Wolfe optimization
