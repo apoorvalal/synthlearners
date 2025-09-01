@@ -1,4 +1,6 @@
 import numpy as np
+import mlpack
+import scipy
 from synthlearners.crossvalidation import PanelCrossValidator, cross_validate
 
 
@@ -25,7 +27,7 @@ class MatrixCompletionEstimator:
 
     """
 
-    def __init__(self, max_iter=500, tol=1e-4, verbose=False):
+    def __init__(self, max_iter=500, tol=1e-4, verbose=False, svd_method="numpy"):
         """
         Parameters:
           lambda_param: regularization strength (the weight on the nuclear norm penalty)
@@ -37,7 +39,40 @@ class MatrixCompletionEstimator:
         self.tol = tol
         self.verbose = verbose
         self.completed_matrix_ = None
+        self.svd_method = svd_method # Options: "numpy", "mlpack", "scipy"
 
+    def internal_svd(self, A, compute_uv=True, full_matrices=True):
+        """
+        Compute the Singular Value Decomposition (SVD) of a matrix.
+
+        Parameters:
+          A: Input matrix to decompose.
+          compute_uv: Whether to compute the full U and Vt matrices.
+          full_matrices: 
+
+        Returns:
+          U: Left singular vectors.
+          s: Singular values.
+          Vt: Right singular vectors (transposed).
+        """
+        if compute_uv is True:
+            if self.svd_method == "numpy":
+                U, s, Vt = np.linalg.svd(A, compute_uv=compute_uv, full_matrices=full_matrices)
+            #if self.svd_method == "mlpack":
+                #U, s, Vt = mlpack.svd(A, compute_uv=compute_uv, full_matrices=full_matrices)
+            if self.svd_method == "scipy":
+                U, s, Vt = scipy.linalg.svd(A, compute_uv=compute_uv, full_matrices=full_matrices)
+            return U, s, Vt
+        else:
+            if self.svd_method == "numpy":
+                s = np.linalg.svd(A, compute_uv=compute_uv, full_matrices=full_matrices)
+            #if self.svd_method == "mlpack":
+                #s = mlpack.svd(A, compute_uv=compute_uv, full_matrices=full_matrices)
+            if self.svd_method == "scipy":
+                s = scipy.linalg.svd(A, compute_uv=compute_uv, full_matrices=full_matrices)
+            return s
+
+    
     def shrink_lambda(self, A, threshold):
         """
         Apply singular value thresholding (soft-thresholding of singular values).
@@ -49,7 +84,7 @@ class MatrixCompletionEstimator:
         Returns:
           The matrix after applying soft-thresholding to its singular values.
         """
-        U, s, Vt = np.linalg.svd(A, full_matrices=False)
+        U, s, Vt = self.internal_svd(A, full_matrices=False)
         # Soft-threshold the singular values.
         s_thresholded = np.maximum(s - threshold, 0)
         return U @ np.diag(s_thresholded) @ Vt, s_thresholded
@@ -192,7 +227,7 @@ class MatrixCompletionEstimator:
         P_omega = (M - E) * mask
 
         # Compute SVD and find lambda_L_max
-        singular_values = np.linalg.svd(P_omega, compute_uv=False)
+        singular_values = self.internal_svd(P_omega, compute_uv=False)
         lambda_L_max = 2.0 * np.max(singular_values) / np.sum(mask)
 
         return {"u": u, "v": v, "lambda_L_max": lambda_L_max}
@@ -254,7 +289,7 @@ class MatrixCompletionEstimator:
 
         M, mask, L, u, v = map(np.asarray, (M, mask, L_init, u_init, v_init))
 
-        sing = np.linalg.svd(L, compute_uv=False)  # Compute singular values
+        sing = self.internal_svd(L, compute_uv=False)  # Compute singular values
         sum_sigma = np.sum(sing)
         obj_val = self.compute_objval(M, mask, L, u, v, sum_sigma, lambda_L)
         term_iter = 0
