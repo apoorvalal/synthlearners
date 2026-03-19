@@ -175,11 +175,16 @@ class PenguinResults:
 
 
 class PenguinSynth:
-    """Regularized Synthetic Control using Adelie's fast solvers.
+    """Regularized synthetic control using Adelie's fast solvers.
 
-    This class implements L1/L2 regularized synthetic control methods that relax
-    the traditional simplex constraints, allowing for more flexible and often
-    more feasible solutions.
+    `PenguinSynth` provides a long-format panel-data interface for fast
+    regularized estimators built on `adelie`.
+
+    Supported methods:
+
+    - `"synth"`: regularized synthetic control
+    - `"sdid"`: regularized synthetic difference-in-differences
+    - `"did"`: regularized difference-in-differences
     """
 
     def __init__(
@@ -189,13 +194,16 @@ class PenguinSynth:
         intercept: bool = True,
         noisy: bool = False,
     ):
-        """Initialize PenguinSynth estimator.
+        """Initialize a `PenguinSynth` estimator.
 
-        Args:
-            l1_ratio: Elastic net mixing parameter (0=Ridge, 1=Lasso, 0.5=ElasticNet)
-            method: Method type - 'synth' for synthetic control, 'sdid' for synthetic DID
-            intercept: Whether to include intercept in the regression
-            noisy: Whether to show progress bars during cross-validation
+        Parameters
+        ----------
+        - `l1_ratio`: Elastic-net mixing parameter. Use `0.0` for ridge,
+          `1.0` for lasso, and values in between for elastic net.
+        - `method`: Estimator variant. One of `"synth"`, `"sdid"`, or `"did"`.
+        - `intercept`: Whether to include an intercept in the balancing
+          regression.
+        - `noisy`: Whether to display adelie cross-validation progress output.
         """
         self.l1_ratio = l1_ratio
         self.method = method
@@ -210,17 +218,20 @@ class PenguinSynth:
         treat: str,
         outcome: str,
     ) -> PenguinResults:
-        """Fit regularized synthetic control model.
+        """Fit a regularized panel-data treatment-effect estimator.
 
-        Args:
-            df: Panel data in long format
-            unit_id: Column name for unit identifier
-            time_id: Column name for time identifier
-            treat: Column name for treatment indicator
-            outcome: Column name for outcome variable
+        Parameters
+        ----------
+        - `df`: Panel data in long format.
+        - `unit_id`: Column containing unit identifiers.
+        - `time_id`: Column containing time identifiers.
+        - `treat`: Column containing the treatment indicator.
+        - `outcome`: Column containing the observed outcome.
 
-        Returns:
-            PenguinResults object containing weights, outcomes, and treatment effects
+        Returns
+        -------
+        - `PenguinResults`: Fitted weights, synthetic outcomes, treatment
+          effects, and summary diagnostics.
         """
         # Reshape data using existing panel_matrices function
         matrices = panel_matrices(df, unit_id, time_id, treat, outcome)

@@ -133,6 +133,31 @@ def test_box_split():
         expected_t = int((1-cv.cv_ratio) * X.shape[1])
         assert abs(test_mask.sum() - expected_n * expected_t) <= 1
 
+
+def test_random_state_reproducibility():
+    """Test that random_state controls all stochastic split generation."""
+    X = np.random.randn(10, 20)
+
+    cv_box_a = PanelCrossValidator(n_splits=5, random_state=42)
+    cv_box_b = PanelCrossValidator(n_splits=5, random_state=42)
+    box_masks_a = cv_box_a.box_split(X)
+    box_masks_b = cv_box_b.box_split(X)
+
+    assert len(box_masks_a) == len(box_masks_b)
+    for (train_a, test_a), (train_b, test_b) in zip(box_masks_a, box_masks_b):
+        assert np.array_equal(train_a, train_b)
+        assert np.array_equal(test_a, test_b)
+
+    cv_random_a = PanelCrossValidator(n_splits=5, random_state=42)
+    cv_random_b = PanelCrossValidator(n_splits=5, random_state=42)
+    random_masks_a = cv_random_a.random_split(X)
+    random_masks_b = cv_random_b.random_split(X)
+
+    assert len(random_masks_a) == len(random_masks_b)
+    for (train_a, test_a), (train_b, test_b) in zip(random_masks_a, random_masks_b):
+        assert np.array_equal(train_a, train_b)
+        assert np.array_equal(test_a, test_b)
+
 def test_split_type_validation():
     """Test that invalid split types raise appropriate errors."""
     cv = PanelCrossValidator(n_splits=5)

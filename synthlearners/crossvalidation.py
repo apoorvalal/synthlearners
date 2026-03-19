@@ -39,7 +39,13 @@ class PanelCrossValidator:
         self.kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
 
 
-    def box_split(self, X, N_prime=None, T_prime=None, specified_rows=None):
+    def box_split(
+        self,
+        X: np.ndarray,
+        N_prime: Optional[int] = None,
+        T_prime: Optional[int] = None,
+        specified_rows: Optional[np.ndarray] = None,
+    ) -> List[Tuple[np.ndarray, np.ndarray]]:
         """
         Create cross-validation masks for an N×T matrix, where the test mask is N'×T'.
         The test mask always uses the last T' columns of the matrix.
@@ -65,6 +71,7 @@ class PanelCrossValidator:
         """
         N = X.shape[0]
         T = X.shape[1]
+        rng = np.random.default_rng(self.random_state)
         N_prime = int((1-self.cv_ratio) * N) if N_prime is None else N_prime
         T_prime = int((1-self.cv_ratio) * T) if T_prime is None else T_prime
 
@@ -76,8 +83,8 @@ class PanelCrossValidator:
             specified_rows = np.array(specified_rows)
             if len(specified_rows) > N_prime:
                 raise ValueError(f"Number of specified rows ({len(specified_rows)}) exceeds N_prime ({N_prime})")
-            if np.max(specified_rows) > N or np.min(specified_rows) < 0:
-                raise ValueError(f"Specified row indices must be between 0 and {N}")
+            if np.max(specified_rows) >= N or np.min(specified_rows) < 0:
+                raise ValueError(f"Specified row indices must be between 0 and {N - 1}")
             # Remove duplicates and sort
             specified_rows = np.unique(specified_rows)
         
@@ -116,7 +123,7 @@ class PanelCrossValidator:
                     
                     if additional_rows_needed > 0 and len(available_rows) > 0:
                         # Randomly select the remaining rows needed
-                        additional_selected = np.random.choice(
+                        additional_selected = rng.choice(
                             available_rows, 
                             size=min(additional_rows_needed, len(available_rows)), 
                             replace=False
@@ -128,7 +135,7 @@ class PanelCrossValidator:
                         row_test_idx = specified_rows
                 # If no specified rows but N_prime is smaller than the default test size
                 elif N_prime < len(row_test_idx):
-                    row_test_idx = np.random.choice(row_test_idx, size=N_prime, replace=False)
+                    row_test_idx = rng.choice(row_test_idx, size=N_prime, replace=False)
             
             
                 # Create empty masks
@@ -198,6 +205,7 @@ class PanelCrossValidator:
         n_units, n_times = X.shape
         total_elements = n_units * n_times
         train_size = int(total_elements * self.cv_ratio)
+        rng = np.random.default_rng(self.random_state)
         masks = []
 
         for _ in range(self.n_splits):
@@ -205,7 +213,7 @@ class PanelCrossValidator:
             test_mask = np.zeros(X.shape, dtype=bool)
 
             # Randomly select elements for training set
-            train_elements = np.random.choice(
+            train_elements = rng.choice(
                 total_elements, size=train_size, replace=False
             )
             train_rows = train_elements // n_times

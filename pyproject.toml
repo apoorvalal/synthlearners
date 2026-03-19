@@ -41,6 +41,9 @@ full = [
     "tqdm",
     "ipywidgets",
 ]
+docs = [
+    "pdoc>=16.0.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["synthlearners"]

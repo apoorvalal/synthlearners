@@ -1,3 +1,9 @@
+"""Public package interface for synthlearners.
+
+Lean installs expose the adelie-based ``PenguinSynth`` API. Full installs also
+expose the traditional ``Synth`` estimator and related result containers.
+"""
+
 from .lbw import PenguinSynth, PenguinResults
 
 # Always available (lean installation)
