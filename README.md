@@ -80,12 +80,15 @@ uv add "synthlearners[full]"
 Full installs add:
 - `Synth`
 - `SynthResults`
+- `DynamicBalance`
+- `DynamicBalanceResults`
 - `Synth(method="simplex")`
 - `Synth(method="linear")`
 - `Synth(method="lp_norm")`
 - `Synth(method="matching")`
 - `Synth(method="matrix_completion")`
 - `Synth(method="sdid")`
+- `DynamicBalance.fit(...)` for exact treatment-history contrasts
 - `PanelCrossValidator` and related cross-validation utilities
 
 `MatrixCompletionEstimator` is available from `synthlearners.mcnnm`; it is not exported from the package root.
@@ -114,13 +117,25 @@ print(f"Treatment effect: {result.att:.3f}")
 ### Full API
 
 ```python
-from synthlearners import Synth, PenguinSynth
+from synthlearners import DynamicBalance, Synth, PenguinSynth
 
 synth = Synth(method="simplex")
 result = synth.fit(Y, treated_units=15, T_pre=10)
 
 penguin = PenguinSynth(method="synth", l1_ratio=0.5)
 result = penguin.fit(df, "unit", "time", "treatment", "outcome")
+
+dynbal = DynamicBalance(l1_ratio=0.0)
+res = dynbal.fit(
+    df=df,
+    unit_id="unit",
+    time_id="time",
+    treatment="treatment",
+    outcome="outcome",
+    covariates=["x", "lag_outcome"],
+    target_history=[1, 1],
+    reference_history=[0, 0],
+)
 ```
 
 ## Performance
