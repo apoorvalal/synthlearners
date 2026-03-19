@@ -30,3 +30,4 @@ notebooks/*.py
 .aider.*
 .claude/settings.local.json
 DynB_R/
+uv.lock
